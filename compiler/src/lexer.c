@@ -232,20 +232,20 @@ ArcToken arc_lexer_next_token(ArcLexer *lexer) {
                 return make_token(lexer, TOKEN_DOT_DOT, token_start, token_loc);
             }
             return make_token(lexer, TOKEN_DOT, token_start, token_loc);
-
         case '/':
             if (peek(lexer) == '=') {
                 advance(lexer);
                 return make_token(lexer, TOKEN_SLASH_EQUAL, token_start, token_loc);
             } else if (peek(lexer) == '/') {
-                // Line comment - skip to end of line
+                // Line comment - skip to end of line and continue tokenizing
                 advance(lexer);  // Skip second '/'
                 while (peek(lexer) != '\n' && !is_at_end(lexer)) {
                     advance(lexer);
                 }
-                return make_token(lexer, TOKEN_COMMENT, token_start, token_loc);
+                // Skip the comment and get the next token
+                return arc_lexer_next_token(lexer);
             } else if (peek(lexer) == '*') {
-                // Block comment - skip to */
+                // Block comment - skip to */ and continue tokenizing
                 advance(lexer);  // Skip '*'
                 bool found_end = false;
                 while (!is_at_end(lexer)) {
@@ -263,7 +263,8 @@ ArcToken arc_lexer_next_token(ArcLexer *lexer) {
                                             "Unterminated block comment");
                 }
 
-                return make_token(lexer, TOKEN_COMMENT, token_start, token_loc);
+                // Skip the comment and get the next token
+                return arc_lexer_next_token(lexer);
             }
             return make_token(lexer, TOKEN_SLASH, token_start, token_loc);
 

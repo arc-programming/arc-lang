@@ -1796,10 +1796,8 @@ ArcAstNode *arc_parser_parse_program(ArcParser *parser) {
 
     while (!check(parser, TOKEN_EOF)) {
         printf("Loop iteration, current token: %s\n",
-               arc_token_type_to_string(parser->current_token.type));
-
-        // Skip newlines and comments at top level
-        if (match(parser, TOKEN_NEWLINE) || match(parser, TOKEN_COMMENT)) {
+               arc_token_type_to_string(parser->current_token.type));  // Skip newlines at top level
+        if (match(parser, TOKEN_NEWLINE)) {
             printf("Skipping %s\n", arc_token_type_to_string(parser->previous_token.type));
             continue;
         }
