@@ -1,6 +1,7 @@
 #include "arc/common.h"
 #include "arc/lexer.h"
 #include "arc/parser.h"
+#include "arc/semantic.h"
 #include <stdio.h>
 
 // Quick lexer test function
@@ -149,14 +150,40 @@ int main(int argc, char *argv[]) {
         arc_arena_destroy(arena);
         FREE(file_content);
         return 1;
-    }
-
-    // Print AST
+    }  // Print AST
     printf("=== AST Structure ===\n");
     arc_ast_node_print(ast, 0);
-    printf("=== AST Complete ===\n");
+    printf("=== AST Complete ===\n");  // Semantic analysis stage
+    printf("\n=== Starting Semantic Analysis ===\n");
+
+    ArcSemanticAnalyzer *analyzer = arc_semantic_analyzer_create();
+    if (!analyzer) {
+        printf("*** Failed to create semantic analyzer! ***\n");
+        arc_parser_cleanup(&parser);
+        arc_arena_destroy(arena);
+        FREE(file_content);
+        return 1;
+    }
+
+    bool sema_success = arc_semantic_analyze(analyzer, ast);
+
+    if (!sema_success || arc_semantic_has_errors(analyzer)) {
+        printf("*** Semantic analysis encountered errors! ***\n");
+
+        // Print semantic analysis diagnostics
+        arc_diagnostic_print_all(analyzer);
+
+        arc_semantic_analyzer_destroy(analyzer);
+        arc_parser_cleanup(&parser);
+        arc_arena_destroy(arena);
+        FREE(file_content);
+        return 1;
+    }
+
+    printf("=== Semantic Analysis Complete ===\n");
 
     // Cleanup
+    arc_semantic_analyzer_destroy(analyzer);
     arc_parser_cleanup(&parser);
     arc_arena_destroy(arena);
     FREE(file_content);  // TODO:
