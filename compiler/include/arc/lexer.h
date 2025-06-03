@@ -76,6 +76,7 @@ typedef enum {
     TOKEN_KEYWORD_IMPL,
     TOKEN_KEYWORD_FN,
     TOKEN_KEYWORD_CONST,
+    TOKEN_KEYWORD_LET,
     TOKEN_KEYWORD_VAR,
     TOKEN_KEYWORD_IF,
     TOKEN_KEYWORD_ELSE_IF,
@@ -103,9 +104,27 @@ typedef enum {
     TOKEN_KEYWORD_INLINE,        // For inline functions
     TOKEN_KEYWORD_UNION,         // Union types
     TOKEN_KEYWORD_PHANTOM,       // For phantom resources
-    TOKEN_KEYWORD_ORELSE,        // For optional handling
+    TOKEN_KEYWORD_ORELSE,        // For optional
+                                 // handling
     TOKEN_KEYWORD_CATCH,         // For error handling
     TOKEN_KEYWORD_TRY,           // For error propagation
+
+    // Primitive type keywords
+    TOKEN_KEYWORD_I8,
+    TOKEN_KEYWORD_I16,
+    TOKEN_KEYWORD_I32,
+    TOKEN_KEYWORD_I64,
+    TOKEN_KEYWORD_ISIZE,
+    TOKEN_KEYWORD_U8,
+    TOKEN_KEYWORD_U16,
+    TOKEN_KEYWORD_U32,
+    TOKEN_KEYWORD_U64,
+    TOKEN_KEYWORD_USIZE,
+    TOKEN_KEYWORD_F32,
+    TOKEN_KEYWORD_F64,
+    TOKEN_KEYWORD_BOOL,
+    TOKEN_KEYWORD_CHAR,
+    TOKEN_KEYWORD_VOID,
 
     // Special tokens
     TOKEN_COMMENT,     // Usually skipped, but can be useful for tools

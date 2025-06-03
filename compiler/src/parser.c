@@ -17,6 +17,7 @@ static ArcAstNode *parse_statement(ArcParser *parser);
 static ArcAstNode *parse_expression(ArcParser *parser);
 static ArcAstNode *parse_primary(ArcParser *parser);
 static ArcAstNode *parse_type(ArcParser *parser);
+static ArcAstNode *parse_type_postfix(ArcParser *parser);
 static ArcAstNode *parse_variable_declaration(ArcParser *parser);
 static ArcAstNode *parse_module_declaration(ArcParser *parser);
 static ArcAstNode *parse_use_declaration(ArcParser *parser);
@@ -1067,14 +1068,47 @@ static ArcAstNode *parse_expression(ArcParser *parser) {
 
 // Parse type annotations
 static ArcAstNode *parse_type(ArcParser *parser) {
+    return parse_type_postfix(parser);
+}
+
+// Helper function to parse base types
+static ArcAstNode *parse_base_type(ArcParser *parser) {
     ArcSourceInfo source_info = arc_parser_current_source_info(parser);
 
     switch (parser->current_token.type) {
-        case TOKEN_IDENTIFIER: {
-            // Handle built-in type names and user-defined types as identifiers
+        // Primitive types
+        case TOKEN_KEYWORD_I8:
+        case TOKEN_KEYWORD_I16:
+        case TOKEN_KEYWORD_I32:
+        case TOKEN_KEYWORD_I64:
+        case TOKEN_KEYWORD_ISIZE:
+        case TOKEN_KEYWORD_U8:
+        case TOKEN_KEYWORD_U16:
+        case TOKEN_KEYWORD_U32:
+        case TOKEN_KEYWORD_U64:
+        case TOKEN_KEYWORD_USIZE:
+        case TOKEN_KEYWORD_F32:
+        case TOKEN_KEYWORD_F64:
+        case TOKEN_KEYWORD_BOOL:
+        case TOKEN_KEYWORD_CHAR:
+        case TOKEN_KEYWORD_VOID: {
             ArcToken token = parser->current_token;
             advance(parser);
 
+            ArcAstNode *node = arc_ast_node_create(parser, AST_TYPE_PRIMITIVE, source_info);
+            if (node) {
+                node->type_primitive.primitive_type = token.type;
+                node->type_primitive.token = token;
+            }
+            return node;
+        }
+
+        case TOKEN_IDENTIFIER: {
+            // User-defined types and named types
+            ArcToken token = parser->current_token;
+            advance(parser);
+
+            // For now, treat as primitive type with identifier
             ArcAstNode *node = arc_ast_node_create(parser, AST_TYPE_PRIMITIVE, source_info);
             if (node) {
                 node->type_primitive.primitive_type = TOKEN_IDENTIFIER;
@@ -1084,11 +1118,11 @@ static ArcAstNode *parse_type(ArcParser *parser) {
         }
 
         case TOKEN_CARET: {
-            // Pointer type: ^Type
+            // Mutable pointer type: ^Type
             ArcToken caret_token = parser->current_token;
             advance(parser);
 
-            ArcAstNode *pointed_type = parse_type(parser);
+            ArcAstNode *pointed_type = parse_base_type(parser);
 
             ArcAstNode *node = arc_ast_node_create(parser, AST_TYPE_POINTER, source_info);
             if (node) {
@@ -1098,13 +1132,33 @@ static ArcAstNode *parse_type(ArcParser *parser) {
             return node;
         }
 
+        case TOKEN_ASTERISK: {
+            // Immutable pointer type: *const Type (simplified for now as *Type)
+            ArcToken asterisk_token = parser->current_token;
+            advance(parser);
+
+            // For now, ignore 'const' keyword and just parse as immutable pointer
+            if (match(parser, TOKEN_KEYWORD_CONST)) {
+                // Skip 'const'
+            }
+
+            ArcAstNode *pointed_type = parse_base_type(parser);
+
+            ArcAstNode *node = arc_ast_node_create(parser, AST_TYPE_POINTER, source_info);
+            if (node) {
+                node->type_pointer.pointed_type = pointed_type;
+                node->type_pointer.caret_token = asterisk_token;  // Reuse for immutable pointers
+            }
+            return node;
+        }
+
         case TOKEN_LBRACKET: {
-            // Array or slice type: [Type] or [size]Type
+            // Array or slice type: [Type; size] or []Type
             ArcToken lbracket_token = parser->current_token;
             advance(parser);
 
             if (check(parser, TOKEN_RBRACKET)) {
-                // Slice type: [Type]
+                // Slice type: []Type
                 advance(parser);  // consume ']'
                 ArcAstNode *element_type = parse_type(parser);
 
@@ -1115,10 +1169,11 @@ static ArcAstNode *parse_type(ArcParser *parser) {
                 }
                 return node;
             } else {
-                // Array type: [size]Type
-                ArcAstNode *size_expr = parse_expression(parser);
-                consume(parser, TOKEN_RBRACKET, "Expected ']' after array size");
+                // Array type: [Type; size]
                 ArcAstNode *element_type = parse_type(parser);
+                consume(parser, TOKEN_SEMICOLON, "Expected ';' in array type");
+                ArcAstNode *size_expr = parse_expression(parser);
+                consume(parser, TOKEN_RBRACKET, "Expected ']' after array type");
 
                 ArcAstNode *node = arc_ast_node_create(parser, AST_TYPE_ARRAY, source_info);
                 if (node) {
@@ -1129,11 +1184,98 @@ static ArcAstNode *parse_type(ArcParser *parser) {
                 return node;
             }
         }
+        case TOKEN_KEYWORD_FN: {
+            // Function type: fn(params) -> ReturnType
+            ArcToken fn_token = parser->current_token;
+            advance(parser);
+
+            consume(parser, TOKEN_LPAREN, "Expected '(' after 'fn'");
+
+            // Parse parameter types
+            ArcAstNode **parameter_types = NULL;
+            size_t parameter_count = 0;
+            size_t parameter_capacity = 0;
+
+            if (!check(parser, TOKEN_RPAREN)) {
+                do {
+                    if (parameter_count >= parameter_capacity) {
+                        parameter_capacity = parameter_capacity == 0 ? 4 : parameter_capacity * 2;
+                        parameter_types =
+                            realloc(parameter_types, parameter_capacity * sizeof(ArcAstNode *));
+                        if (!parameter_types) {
+                            arc_parser_error(parser,
+                                             "Out of memory parsing function type parameters");
+                            return NULL;
+                        }
+                    }
+
+                    parameter_types[parameter_count++] = parse_type(parser);
+                } while (match(parser, TOKEN_COMMA));
+            }
+
+            consume(parser, TOKEN_RPAREN, "Expected ')' after function parameters");
+
+            ArcAstNode *return_type = NULL;
+            if (match(parser, TOKEN_ARROW)) {
+                return_type = parse_type(parser);
+            }
+
+            ArcAstNode *node = arc_ast_node_create(parser, AST_TYPE_FUNCTION, source_info);
+            if (node) {
+                // Allocate final parameter array in parser's memory system
+                if (parameter_count > 0) {
+                    node->type_function.parameter_types =
+                        (ArcAstNode **)alloc_array(parser, parameter_count, sizeof(ArcAstNode *));
+                    if (node->type_function.parameter_types) {
+                        memcpy(node->type_function.parameter_types, parameter_types,
+                               parameter_count * sizeof(ArcAstNode *));
+                    }
+                } else {
+                    node->type_function.parameter_types = NULL;
+                }
+                node->type_function.parameter_count = parameter_count;
+                node->type_function.return_type = return_type;
+                node->type_function.fn_token = fn_token;
+            }
+
+            free(parameter_types);
+            return node;
+        }
+
+        case TOKEN_LPAREN: {
+            // Parenthesized type: (Type)
+            advance(parser);  // consume '('
+            ArcAstNode *inner_type = parse_type(parser);
+            consume(parser, TOKEN_RPAREN, "Expected ')' after parenthesized type");
+            return inner_type;
+        }
 
         default:
             arc_parser_error(parser, "Expected type annotation");
             return NULL;
     }
+}
+
+// Helper function to parse type with optional postfix (for optional types)
+static ArcAstNode *parse_type_postfix(ArcParser *parser) {
+    ArcAstNode *base_type = parse_base_type(parser);
+    if (!base_type)
+        return NULL;
+
+    // Handle optional type postfix: Type?
+    if (match(parser, TOKEN_QUESTION)) {
+        ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+        ArcToken question_token = parser->previous_token;
+
+        ArcAstNode *node = arc_ast_node_create(parser, AST_TYPE_OPTIONAL, source_info);
+        if (node) {
+            node->type_optional.inner_type = base_type;
+            node->type_optional.question_token = question_token;
+        }
+        return node;
+    }
+
+    return base_type;
 }
 
 // === STATEMENT PARSING ===
@@ -1388,7 +1530,16 @@ static ArcAstNode *parse_statement(ArcParser *parser) {
 
 static ArcAstNode *parse_variable_declaration(ArcParser *parser) {
     ArcSourceInfo source_info = arc_parser_current_source_info(parser);
-    ArcToken var_token = consume(parser, TOKEN_KEYWORD_VAR, "Expected 'var'");
+
+    // Handle let, const, or var keywords
+    ArcToken decl_token;
+    if (check(parser, TOKEN_KEYWORD_LET)) {
+        decl_token = consume(parser, TOKEN_KEYWORD_LET, "Expected 'let'");
+    } else if (check(parser, TOKEN_KEYWORD_CONST)) {
+        decl_token = consume(parser, TOKEN_KEYWORD_CONST, "Expected 'const'");
+    } else {
+        decl_token = consume(parser, TOKEN_KEYWORD_VAR, "Expected 'var'");
+    }
 
     ArcToken name = consume(parser, TOKEN_IDENTIFIER, "Expected variable name");
 
@@ -1406,7 +1557,7 @@ static ArcAstNode *parse_variable_declaration(ArcParser *parser) {
 
     ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_VAR_DECL, source_info);
     if (node) {
-        node->var_decl_stmt.var_token = var_token;
+        node->var_decl_stmt.var_token = decl_token;
         node->var_decl_stmt.name = name;
         node->var_decl_stmt.type_annotation = type_annotation;
         node->var_decl_stmt.initializer = initializer;
@@ -1607,6 +1758,8 @@ static ArcAstNode *parse_declaration(ArcParser *parser) {
             return parse_declaration(parser);
         case TOKEN_KEYWORD_FN:
             return parse_function_declaration(parser);
+        case TOKEN_KEYWORD_CONST:
+        case TOKEN_KEYWORD_LET:
         case TOKEN_KEYWORD_VAR:
             return parse_variable_declaration(parser);
         case TOKEN_KEYWORD_MOD:
@@ -1945,10 +2098,27 @@ void arc_ast_node_print(const ArcAstNode *node, int depth) {
             printf("ElementType:\n");
             arc_ast_node_print(node->type_array.element_type, depth + 2);
             break;
-
         case AST_TYPE_SLICE:
             printf("SliceType\n");
             arc_ast_node_print(node->type_slice.element_type, depth + 1);
+            break;
+        case AST_TYPE_OPTIONAL:
+            printf("OptionalType\n");
+            arc_ast_node_print(node->type_optional.inner_type, depth + 1);
+            break;
+
+        case AST_TYPE_FUNCTION:
+            printf("FunctionType\n");
+            print_indent(depth + 1);
+            printf("Parameters:\n");
+            for (size_t i = 0; i < node->type_function.parameter_count; i++) {
+                arc_ast_node_print(node->type_function.parameter_types[i], depth + 2);
+            }
+            if (node->type_function.return_type) {
+                print_indent(depth + 1);
+                printf("ReturnType:\n");
+                arc_ast_node_print(node->type_function.return_type, depth + 2);
+            }
             break;
 
         default:

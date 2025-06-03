@@ -491,6 +491,7 @@ static ArcTokenType check_keyword(const char *start, size_t length) {
                     {"impl", TOKEN_KEYWORD_IMPL},
                     {"fn", TOKEN_KEYWORD_FN},
                     {"const", TOKEN_KEYWORD_CONST},
+                    {"let", TOKEN_KEYWORD_LET},
                     {"var", TOKEN_KEYWORD_VAR},
                     {"if", TOKEN_KEYWORD_IF},
                     {"else_if", TOKEN_KEYWORD_ELSE_IF},
@@ -520,7 +521,23 @@ static ArcTokenType check_keyword(const char *start, size_t length) {
                     {"phantom", TOKEN_KEYWORD_PHANTOM},
                     {"orelse", TOKEN_KEYWORD_ORELSE},
                     {"catch", TOKEN_KEYWORD_CATCH},
-                    {"try", TOKEN_KEYWORD_TRY}};
+                    {"try", TOKEN_KEYWORD_TRY},
+                    // Primitive types
+                    {"i8", TOKEN_KEYWORD_I8},
+                    {"i16", TOKEN_KEYWORD_I16},
+                    {"i32", TOKEN_KEYWORD_I32},
+                    {"i64", TOKEN_KEYWORD_I64},
+                    {"isize", TOKEN_KEYWORD_ISIZE},
+                    {"u8", TOKEN_KEYWORD_U8},
+                    {"u16", TOKEN_KEYWORD_U16},
+                    {"u32", TOKEN_KEYWORD_U32},
+                    {"u64", TOKEN_KEYWORD_U64},
+                    {"usize", TOKEN_KEYWORD_USIZE},
+                    {"f32", TOKEN_KEYWORD_F32},
+                    {"f64", TOKEN_KEYWORD_F64},
+                    {"bool", TOKEN_KEYWORD_BOOL},
+                    {"char", TOKEN_KEYWORD_CHAR},
+                    {"void", TOKEN_KEYWORD_VOID}};
 
     for (size_t i = 0; i < sizeof(keywords) / sizeof(keywords[0]); i++) {
         if (strlen(keywords[i].keyword) == length &&
@@ -655,6 +672,8 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "KEYWORD_FN";
         case TOKEN_KEYWORD_CONST:
             return "KEYWORD_CONST";
+        case TOKEN_KEYWORD_LET:
+            return "KEYWORD_LET";
         case TOKEN_KEYWORD_VAR:
             return "KEYWORD_VAR";
         case TOKEN_KEYWORD_IF:
@@ -715,6 +734,37 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "KEYWORD_CATCH";
         case TOKEN_KEYWORD_TRY:
             return "KEYWORD_TRY";
+        // Primitive types
+        case TOKEN_KEYWORD_I8:
+            return "KEYWORD_I8";
+        case TOKEN_KEYWORD_I16:
+            return "KEYWORD_I16";
+        case TOKEN_KEYWORD_I32:
+            return "KEYWORD_I32";
+        case TOKEN_KEYWORD_I64:
+            return "KEYWORD_I64";
+        case TOKEN_KEYWORD_ISIZE:
+            return "KEYWORD_ISIZE";
+        case TOKEN_KEYWORD_U8:
+            return "KEYWORD_U8";
+        case TOKEN_KEYWORD_U16:
+            return "KEYWORD_U16";
+        case TOKEN_KEYWORD_U32:
+            return "KEYWORD_U32";
+        case TOKEN_KEYWORD_U64:
+            return "KEYWORD_U64";
+        case TOKEN_KEYWORD_USIZE:
+            return "KEYWORD_USIZE";
+        case TOKEN_KEYWORD_F32:
+            return "KEYWORD_F32";
+        case TOKEN_KEYWORD_F64:
+            return "KEYWORD_F64";
+        case TOKEN_KEYWORD_BOOL:
+            return "KEYWORD_BOOL";
+        case TOKEN_KEYWORD_CHAR:
+            return "KEYWORD_CHAR";
+        case TOKEN_KEYWORD_VOID:
+            return "KEYWORD_VOID";
         case TOKEN_COMMENT:
             return "COMMENT";
         case TOKEN_NEWLINE:
