@@ -1,3 +1,408 @@
+# Arc Language Specification v0.2.0
+
+**Version**: 0.2.0  
+**Date**: December 2024  
+**Status**: Parser Implementation - Core Features
+
+## Changelog
+
+### v0.2.0 (December 2024)
+- ✅ Added comprehensive type system parsing
+- ✅ Implemented module system (`mod`, `use`, `pub`)
+- ✅ Added variable declarations (`let`, `const`, `var`)
+- ✅ Added function declarations with full type support
+- ✅ Added primitive type parsing (i8, i16, i32, i64, isize, u8, u16, u32, u64, usize, f32, f64, bool, char, void)
+- ✅ Added pointer types (`^Type`, `*const Type`)
+- ✅ Added optional types (`Type?`)
+- ✅ Added array types (`[Type; size]`)
+- ✅ Added slice types (`[]Type`)
+- ✅ Added function types (`fn(params) -> ReturnType`)
+- ✅ Added parenthesized types for precedence
+- ✅ Added basic control flow parsing (if/else, while, for, return, break, continue)
+- ✅ Added basic expression parsing (binary ops, unary ops, function calls, field access)
+- ✅ Added comment support (line and block comments)
+- ⚠️ Removed features not yet implemented in parser
+
+### v0.1.0 (Initial)
+- Initial specification draft
+
+---
+
+## Currently Supported Language Features
+
+This specification documents **only** the features that are currently implemented in the Arc language parser. Features marked as "Future" are planned but not yet supported.
+
+## 1. Lexical Structure
+
+### Comments
+```arc
+// Line comment
+/* Block comment */
+```
+
+### Identifiers
+- Must start with letter or underscore
+- Can contain letters, digits, underscores
+- Case-sensitive
+
+### Keywords
+```
+// Control flow
+if else_if else while for in match break continue return
+
+// Declarations  
+fn const let var mod use pub
+
+// Types
+i8 i16 i32 i64 isize u8 u16 u32 u64 usize f32 f64 bool char void
+
+// Literals
+true false null
+
+// Future keywords (recognized but not parsed)
+defer comptime stream capability phantom_resource
+struct enum interface impl union type extern export
+try catch orelse context using with_context
+static_assert phantom
+```
+
+### Operators
+```
+// Arithmetic
++ - * / %
+
+// Comparison  
+== != < > <= >=
+
+// Logical
+&& || !
+
+// Bitwise
+& | ^ << >> ~
+
+// Assignment
+= += -= *= /= %= &= |= ^= <<= >>=
+
+// Access and navigation
+. :: -> |>
+
+// Type and memory
+? @ # 
+
+// Grouping
+( ) [ ] { }
+
+// Separators
+, ; ..  ...
+```
+
+### Literals
+
+#### Integer Literals
+```arc
+42          // Decimal
+0x2A        // Hexadecimal  
+0b101010    // Binary
+0o52        // Octal
+```
+
+#### Floating Point Literals
+```arc
+3.14
+.5
+2.0
+1e6
+1.5e-3
+```
+
+#### String Literals
+```arc
+"Hello, World!"
+"Line 1\nLine 2"
+"Unicode: \u{1F60A}"
+```
+
+#### Character Literals
+```arc
+'a'
+'\n'
+'\u{41}'    // Unicode
+```
+
+#### Boolean and Null Literals
+```arc
+true
+false
+null
+```
+
+## 2. Type System
+
+### Primitive Types
+```arc
+// Signed integers
+i8 i16 i32 i64 isize
+
+// Unsigned integers  
+u8 u16 u32 u64 usize
+
+// Floating point
+f32 f64
+
+// Other primitives
+bool char void
+```
+
+### Pointer Types
+```arc
+^i32           // Mutable pointer
+*const i32     // Immutable pointer
+```
+
+### Optional Types
+```arc
+i32?           // Optional integer
+^i32?          // Optional pointer
+```
+
+### Array Types
+```arc
+[i32; 10]      // Fixed-size array
+[[f32; 3]; 3]  // Nested arrays
+```
+
+### Slice Types
+```arc
+[]i32          // Slice of integers
+[]char         // Slice of characters
+```
+
+### Function Types
+```arc
+fn() -> void                    // No parameters
+fn(i32, i32) -> i32            // Multiple parameters
+fn(name: i32, age: i32) -> bool // Named parameters
+fn(i32?) -> []^f64             // Complex nested types
+```
+
+### Parenthesized Types
+```arc
+(fn(i32) -> bool)?     // Optional function type
+```
+
+## 3. Variable Declarations
+
+### Basic Variable Declaration
+```arc
+let name: i32 = 42;
+let age: u32;
+```
+
+### Constant Declaration
+```arc
+const PI: f64 = 3.14159;
+const MAX_SIZE: usize = 1024;
+```
+
+### Mutable Variable Declaration
+```arc
+var counter: i32 = 0;
+```
+
+### Type Inference
+```arc
+let name = "Alice";        // Type inferred as string
+let count = 42;            // Type inferred as i32
+```
+
+## 4. Function Declarations
+
+### Basic Function
+```arc
+fn greet() -> void {
+    // Function body
+}
+```
+
+### Function with Parameters
+```arc
+fn add(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+```
+
+### Function with Complex Types
+```arc
+fn process(data: []i32, callback: fn(i32) -> bool) -> []i32 {
+    // Function body
+}
+```
+
+## 5. Module System
+
+### Module Declaration
+```arc
+mod math;                   // External module
+mod utils {                 // Inline module
+    // Module contents
+}
+```
+
+### Module Imports
+```arc
+use std::io;               // Import module
+use collections::Vec;      // Import specific item
+```
+
+### Public Visibility
+```arc
+pub fn public_function() -> void {
+    // Public function
+}
+
+pub mod public_module {
+    // Public module
+}
+```
+
+## 6. Control Flow
+
+### Conditional Statements
+```arc
+if condition {
+    // then branch
+} else_if other_condition {
+    // else if branch  
+} else {
+    // else branch
+}
+```
+
+### Loops
+```arc
+// While loop
+while condition {
+    // loop body
+}
+
+// For loop (basic parsing supported)
+for item in collection {
+    // loop body
+}
+```
+
+### Flow Control
+```arc
+return value;       // Return from function
+break;             // Break from loop
+continue;          // Continue loop
+```
+
+## 7. Expressions
+
+### Binary Expressions
+```arc
+a + b              // Arithmetic
+x == y             // Comparison
+p && q             // Logical
+```
+
+### Unary Expressions  
+```arc
+!flag              // Logical NOT
+-number            // Negation
+^ptr               // Dereference
+&value             // Address-of
+```
+
+### Function Calls
+```arc
+func()             // No arguments
+add(1, 2)          // With arguments
+```
+
+### Field Access
+```arc
+obj.field          // Field access
+module::item       // Module path
+```
+
+## 8. Blocks and Statements
+
+### Block Statements
+```arc
+{
+    let x = 10;
+    let y = 20;
+    // More statements
+}
+```
+
+### Expression Statements
+```arc
+function_call();
+x + y;
+```
+
+## Parser Limitations
+
+The current parser implementation has these limitations:
+
+1. **Array literals** - `[1, 2, 3]` syntax not yet supported
+2. **Struct/enum definitions** - User-defined types not implemented
+3. **Match expressions** - Pattern matching not implemented  
+4. **Generic types** - `Vec<T>` syntax not supported
+5. **Error handling** - `try`/`catch` not implemented
+6. **Advanced features** - `defer`, `comptime`, etc. not implemented
+7. **Complex expressions** - Limited expression parsing
+8. **String interpolation** - Not implemented
+9. **Attributes** - `@packed`, `@inline` not implemented
+
+## Grammar Summary
+
+```ebnf
+Program = Declaration*
+
+Declaration = ModuleDecl | UseDecl | FunctionDecl | VariableDecl
+
+ModuleDecl = "pub"? "mod" IDENTIFIER (";" | "{" Declaration* "}")
+UseDecl = "use" ModulePath ";"
+FunctionDecl = "pub"? "fn" IDENTIFIER "(" ParameterList? ")" ("->" Type)? Block
+VariableDecl = ("let" | "const" | "var") IDENTIFIER (":" Type)? ("=" Expression)? ";"
+
+Type = BaseType TypePostfix*
+BaseType = PrimitiveType | "(" Type ")" | FunctionType
+TypePostfix = "?" | "[" Type ";" Expression "]" | "[" "]" | "^" | "*" "const"
+FunctionType = "fn" "(" ParameterList? ")" ("->" Type)?
+
+PrimitiveType = "i8" | "i16" | "i32" | "i64" | "isize" | 
+                "u8" | "u16" | "u32" | "u64" | "usize" |
+                "f32" | "f64" | "bool" | "char" | "void"
+
+Expression = BinaryExpr | UnaryExpr | PrimaryExpr
+PrimaryExpr = IDENTIFIER | Literal | FunctionCall | FieldAccess | "(" Expression ")"
+
+Statement = ExpressionStmt | VariableDecl | IfStmt | WhileStmt | ForStmt | 
+            ReturnStmt | BreakStmt | ContinueStmt | Block
+
+Block = "{" Statement* "}"
+```
+
+---
+
+## Implementation Status
+
+**Lexer**: ~90% complete  
+**Parser**: ~30% complete  
+**Type System**: ~70% complete  
+**Module System**: ~60% complete  
+**Control Flow**: ~40% complete  
+**Expressions**: ~35% complete  
+
+The current implementation provides a solid foundation for basic Arc programs with strong type system support and module organization capabilities.
+
+
+
 # Arc Language Specification
 **Version 0.1-draft**
 
