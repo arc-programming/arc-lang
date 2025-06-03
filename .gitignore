@@ -26,7 +26,7 @@ Makefile
 *.exe
 *.out
 *.app
-arc
+/arc
 arc.exe
 
 # Static and dynamic libraries
