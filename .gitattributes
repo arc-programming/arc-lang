@@ -1,0 +1,103 @@
+# Set default behavior to automatically normalize line endings
+* text=auto eol=lf
+
+# Explicitly declare text files you want to always be normalized and converted
+# to native line endings on checkout.
+*.c text
+*.h text
+*.arc text
+*.md text
+*.txt text
+*.yml text
+*.yaml text
+*.json text
+*.toml text
+*.cmake text
+*.sh text eol=lf
+*.bat text eol=crlf
+
+# CMake files
+CMakeLists.txt text
+*.cmake text
+
+# Configuration files
+.gitignore text
+.gitattributes text
+.clang-format text
+.clang-tidy text
+.editorconfig text
+
+# Documentation
+*.md text
+*.rst text
+LICENSE text
+CHANGELOG text
+CONTRIBUTING text
+
+# Scripts should have Unix line endings
+*.sh text eol=lf
+*.py text eol=lf
+
+# Windows scripts should have Windows line endings
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files should not be modified
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.7z binary
+*.rar binary
+
+# Archives
+*.tar.gz binary
+*.tar.bz2 binary
+*.tar.xz binary
+
+# Fonts
+*.woff binary
+*.woff2 binary
+*.eot binary
+*.ttf binary
+*.otf binary
+
+# Audio/Video
+*.mp3 binary
+*.mp4 binary
+*.avi binary
+*.mov binary
+*.wav binary
+
+# Compiled binaries and libraries
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.a binary
+*.lib binary
+*.o binary
+*.obj binary
+
+# Generated files
+*.generated.* linguist-generated=true
+*_generated.* linguist-generated=true
+
+# Language detection overrides for GitHub
+*.arc linguist-language=Arc
+examples/*.arc linguist-documentation=false
+tests/*.arc linguist-documentation=false
+
+# Mark vendor code
+third_party/* linguist-vendored
+vendor/* linguist-vendored
+deps/* linguist-vendored
+
+# Large test files should use LFS if needed
+# *.large-test-file filter=lfs diff=lfs merge=lfs -text

@@ -1,0 +1,57 @@
+---
+Checks: >
+  *,
+  -altera-*,
+  -android-*,
+  -darwin-*,
+  -fuchsia-*,
+  -google-*,
+  -llvm-*,
+  -llvmlibc-*,
+  -zircon-*,
+  -abseil-*,
+  -boost-*,
+  -cert-err58-cpp,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-macro-usage,
+  -hicpp-*,
+  -modernize-*,
+  -readability-magic-numbers,
+  -readability-uppercase-literal-suffix,
+  -misc-unused-parameters,
+  -clang-diagnostic-unused-parameter,
+  -bugprone-easily-swappable-parameters,
+  -readability-function-cognitive-complexity
+
+WarningsAsErrors: >
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  performance-*,
+  portability-*
+
+CheckOptions:
+  - key:             readability-identifier-naming.VariableCase
+    value:           lower_case
+  - key:             readability-identifier-naming.FunctionCase  
+    value:           lower_case
+  - key:             readability-identifier-naming.TypedefCase
+    value:           CamelCase
+  - key:             readability-identifier-naming.StructCase
+    value:           CamelCase
+  - key:             readability-identifier-naming.EnumCase
+    value:           CamelCase
+  - key:             readability-identifier-naming.MacroDefinitionCase
+    value:           UPPER_CASE
+  - key:             readability-identifier-naming.ConstantCase
+    value:           UPPER_CASE
+  - key:             readability-identifier-naming.GlobalConstantCase
+    value:           UPPER_CASE
+  - key:             readability-function-size.LineThreshold
+    value:           '100'
+  - key:             readability-function-size.StatementThreshold
+    value:           '50'
+  - key:             performance-unnecessary-value-param.AllowedTypes
+    value:           'Arc_String;Arc_Token'
+
+HeaderFilterRegex: '(compiler/include/.*|compiler/src/.*)'
