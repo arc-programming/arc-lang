@@ -6,6 +6,7 @@ set(COMPILER_EXECUTABLE_NAME arc)
 # --- Source Files ---
 set(COMPILER_SOURCES
     src/main.c
+    src/common.c
     # src/lexer/lexer.c
     # src/lexer/token.c
     # src/utils/memory.c
