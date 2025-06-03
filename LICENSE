@@ -1,0 +1,27 @@
+Arc Programming Language License Information
+===========================================
+
+The Arc programming language project uses different licenses for different components:
+
+COMPILER (compiler/ directory):
+  Licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later)
+  See LICENSE-GPL for full terms.
+  
+  This ensures that improvements to the Arc compiler are shared with the community.
+
+STANDARD LIBRARY, TOOLS, EXAMPLES, AND DOCUMENTATION (stdlib/, tools/, examples/, docs/, tests/):
+  Licensed under the MIT License
+  See LICENSE-MIT for full terms.
+  
+  This allows you to use Arc's standard library and tools in your projects without
+  any licensing restrictions on your code.
+
+USING ARC IN YOUR PROJECTS:
+  Programs written in Arc are not affected by the compiler's GPL license.
+  Your Arc programs can use any license you choose.
+  
+  The standard library (MIT licensed) can be statically or dynamically linked
+  into your programs without any licensing requirements.
+
+For questions about licensing, please open an issue at:
+https://github.com/arc-programming/arc-lang/issues
