@@ -12,11 +12,11 @@
 #define INITIAL_NODE_CAPACITY 256
 
 // Forward declarations for parsing functions
-// static ArcAstNode *parse_declaration(ArcParser *parser);
-// static ArcAstNode *parse_statement(ArcParser *parser);
+static ArcAstNode *parse_declaration(ArcParser *parser);
+static ArcAstNode *parse_statement(ArcParser *parser);
 static ArcAstNode *parse_expression(ArcParser *parser);
 static ArcAstNode *parse_primary(ArcParser *parser);
-// static ArcAstNode *parse_type(ArcParser *parser);
+static ArcAstNode *parse_type(ArcParser *parser);
 
 // Utility functions
 static void advance(ArcParser *parser);
@@ -937,12 +937,21 @@ static ArcAstNode *parse_call(ArcParser *parser, ArcAstNode *function) {
             }
         } while (match(parser, TOKEN_COMMA));
     }
-
     consume(parser, TOKEN_RPAREN, "Expected ')' after function arguments");
 
-    // Assign to node
+    // Convert to arena/heap allocated array
     node->call_expr.argument_count = argument_count;
-    node->call_expr.arguments = arguments;
+    if (argument_count > 0) {
+        node->call_expr.arguments =
+            (ArcAstNode **)alloc_array(parser, argument_count, sizeof(ArcAstNode *));
+        if (node->call_expr.arguments) {
+            memcpy(node->call_expr.arguments, arguments, sizeof(ArcAstNode *) * argument_count);
+        }
+    } else {
+        node->call_expr.arguments = NULL;
+    }
+
+    free(arguments);
     return node;
 }
 
@@ -1048,7 +1057,7 @@ static ArcAstNode *parse_expression(ArcParser *parser) {
 }
 
 // Parse type annotations
-/*static ArcAstNode *parse_type(ArcParser *parser) {
+static ArcAstNode *parse_type(ArcParser *parser) {
     ArcSourceInfo source_info = arc_parser_current_source_info(parser);
 
     switch (parser->current_token.type) {
@@ -1116,6 +1125,630 @@ static ArcAstNode *parse_expression(ArcParser *parser) {
             arc_parser_error(parser, "Expected type annotation");
             return NULL;
     }
-}*/
+}
 
-// Continue in next part due to length...
+// === STATEMENT PARSING ===
+
+static ArcAstNode *parse_expression_statement(ArcParser *parser) {
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcAstNode *expr = parse_expression(parser);
+
+    consume(parser, TOKEN_SEMICOLON, "Expected ';' after expression");
+
+    ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_EXPRESSION, source_info);
+    if (node) {
+        node->expr_stmt.expression = expr;
+    }
+    return node;
+}
+
+// Forward declaration needed for parse_block_statement
+static ArcAstNode *parse_statement(ArcParser *parser);
+
+static ArcAstNode *parse_block_statement(ArcParser *parser) {
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcToken lbrace_token = consume(parser, TOKEN_LBRACE, "Expected '{'");
+
+    ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_BLOCK, source_info);
+    if (!node)
+        return NULL;
+
+    node->block_stmt.lbrace_token = lbrace_token;
+
+    // Parse statements using dynamic array
+    ArcAstNode **statements = NULL;
+    size_t statement_count = 0;
+    size_t statement_capacity = 0;
+
+    while (!check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
+        ArcAstNode *stmt = parse_statement(parser);
+        if (stmt) {
+            // Grow array if needed
+            if (statement_count >= statement_capacity) {
+                size_t new_capacity = statement_capacity == 0 ? 4 : statement_capacity * 2;
+                ArcAstNode **new_statements =
+                    realloc(statements, sizeof(ArcAstNode *) * new_capacity);
+                if (!new_statements) {
+                    free(statements);
+                    return node;
+                }
+                statements = new_statements;
+                statement_capacity = new_capacity;
+            }
+            statements[statement_count++] = stmt;
+        }
+
+        if (parser->panic_mode) {
+            arc_parser_synchronize(parser);
+        }
+    }
+
+    consume(parser, TOKEN_RBRACE, "Expected '}' after block");
+
+    // Convert to arena/heap allocated array
+    node->block_stmt.statement_count = statement_count;
+    if (statement_count > 0) {
+        node->block_stmt.statements =
+            (ArcAstNode **)alloc_array(parser, statement_count, sizeof(ArcAstNode *));
+        if (node->block_stmt.statements) {
+            memcpy(node->block_stmt.statements, statements, sizeof(ArcAstNode *) * statement_count);
+        }
+    } else {
+        node->block_stmt.statements = NULL;
+    }
+
+    free(statements);
+    return node;
+}
+
+static ArcAstNode *parse_if_statement(ArcParser *parser) {
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcToken if_token = consume(parser, TOKEN_KEYWORD_IF, "Expected 'if'");
+
+    ArcAstNode *condition = parse_expression(parser);
+    ArcAstNode *then_stmt = parse_statement(parser);
+    ArcAstNode *else_stmt = NULL;
+
+    if (match(parser, TOKEN_KEYWORD_ELSE)) {
+        else_stmt = parse_statement(parser);
+    }
+
+    ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_IF, source_info);
+    if (node) {
+        node->if_stmt.if_token = if_token;
+        node->if_stmt.condition = condition;
+        node->if_stmt.then_branch = then_stmt;
+        node->if_stmt.else_branch = else_stmt;
+    }
+    return node;
+}
+
+static ArcAstNode *parse_while_statement(ArcParser *parser) {
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcToken while_token = consume(parser, TOKEN_KEYWORD_WHILE, "Expected 'while'");
+
+    ArcAstNode *condition = parse_expression(parser);
+    ArcAstNode *body = parse_statement(parser);
+
+    ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_WHILE, source_info);
+    if (node) {
+        node->while_stmt.while_token = while_token;
+        node->while_stmt.condition = condition;
+        node->while_stmt.body = body;
+    }
+    return node;
+}
+
+static ArcAstNode *parse_for_statement(ArcParser *parser) {
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcToken for_token = consume(parser, TOKEN_KEYWORD_FOR, "Expected 'for'");
+
+    ArcToken iterator = consume(parser, TOKEN_IDENTIFIER, "Expected iterator variable name");
+    ArcToken in_token = consume(parser, TOKEN_KEYWORD_IN, "Expected 'in' after iterator variable");
+    ArcAstNode *iterable = parse_expression(parser);
+    ArcAstNode *body = parse_statement(parser);
+
+    ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_FOR, source_info);
+    if (node) {
+        node->for_stmt.for_token = for_token;
+        node->for_stmt.iterator = iterator;
+        node->for_stmt.in_token = in_token;
+        node->for_stmt.iterable = iterable;
+        node->for_stmt.body = body;
+    }
+    return node;
+}
+
+static ArcAstNode *parse_return_statement(ArcParser *parser) {
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcToken return_token = consume(parser, TOKEN_KEYWORD_RETURN, "Expected 'return'");
+
+    ArcAstNode *value = NULL;
+    if (!check(parser, TOKEN_SEMICOLON)) {
+        value = parse_expression(parser);
+    }
+
+    consume(parser, TOKEN_SEMICOLON, "Expected ';' after return statement");
+
+    ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_RETURN, source_info);
+    if (node) {
+        node->return_stmt.return_token = return_token;
+        node->return_stmt.value = value;
+    }
+    return node;
+}
+
+static ArcAstNode *parse_break_statement(ArcParser *parser) {
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcToken break_token = consume(parser, TOKEN_KEYWORD_BREAK, "Expected 'break'");
+
+    consume(parser, TOKEN_SEMICOLON, "Expected ';' after break statement");
+
+    ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_BREAK, source_info);
+    if (node) {
+        node->break_stmt.break_token = break_token;
+    }
+    return node;
+}
+
+static ArcAstNode *parse_continue_statement(ArcParser *parser) {
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcToken continue_token = consume(parser, TOKEN_KEYWORD_CONTINUE, "Expected 'continue'");
+
+    consume(parser, TOKEN_SEMICOLON, "Expected ';' after continue statement");
+
+    ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_CONTINUE, source_info);
+    if (node) {
+        node->continue_stmt.continue_token = continue_token;
+    }
+    return node;
+}
+
+static ArcAstNode *parse_statement(ArcParser *parser) {
+    switch (parser->current_token.type) {
+        case TOKEN_KEYWORD_IF:
+            return parse_if_statement(parser);
+        case TOKEN_KEYWORD_WHILE:
+            return parse_while_statement(parser);
+        case TOKEN_KEYWORD_FOR:
+            return parse_for_statement(parser);
+        case TOKEN_KEYWORD_RETURN:
+            return parse_return_statement(parser);
+        case TOKEN_KEYWORD_BREAK:
+            return parse_break_statement(parser);
+        case TOKEN_KEYWORD_CONTINUE:
+            return parse_continue_statement(parser);
+        case TOKEN_LBRACE:
+            return parse_block_statement(parser);
+        default:
+            return parse_expression_statement(parser);
+    }
+}
+
+// === DECLARATION PARSING ===
+
+static ArcAstNode *parse_variable_declaration(ArcParser *parser) {
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcToken var_token = consume(parser, TOKEN_KEYWORD_VAR, "Expected 'var'");
+
+    ArcToken name = consume(parser, TOKEN_IDENTIFIER, "Expected variable name");
+
+    ArcAstNode *type_annotation = NULL;
+    if (match(parser, TOKEN_COLON)) {
+        type_annotation = parse_type(parser);
+    }
+
+    ArcAstNode *initializer = NULL;
+    if (match(parser, TOKEN_EQUAL)) {
+        initializer = parse_expression(parser);
+    }
+
+    consume(parser, TOKEN_SEMICOLON, "Expected ';' after variable declaration");
+
+    ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_VAR_DECL, source_info);
+    if (node) {
+        node->var_decl_stmt.var_token = var_token;
+        node->var_decl_stmt.name = name;
+        node->var_decl_stmt.type_annotation = type_annotation;
+        node->var_decl_stmt.initializer = initializer;
+    }
+    return node;
+}
+
+static ArcAstNode *parse_function_declaration(ArcParser *parser) {
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcToken fn_token = consume(parser, TOKEN_KEYWORD_FN, "Expected 'fn'");
+
+    ArcToken name = consume(parser, TOKEN_IDENTIFIER, "Expected function name");
+
+    consume(parser, TOKEN_LPAREN, "Expected '(' after function name");
+
+    // Parse parameters
+    ArcAstNode **parameters = NULL;
+    size_t parameter_count = 0;
+    size_t parameter_capacity = 0;
+
+    if (!check(parser, TOKEN_RPAREN)) {
+        do {
+            // Parse parameter: name: type
+            ArcSourceInfo param_source = arc_parser_current_source_info(parser);
+            ArcToken param_name = consume(parser, TOKEN_IDENTIFIER, "Expected parameter name");
+
+            consume(parser, TOKEN_COLON, "Expected ':' after parameter name");
+
+            // Parse parameter type
+            ArcAstNode *param_type = parse_type(parser);
+
+            // Create parameter node
+            ArcAstNode *param = arc_ast_node_create(parser, AST_PARAMETER, param_source);
+            if (param) {
+                param->parameter.name = param_name;
+                param->parameter.type_annotation = param_type;
+            }
+
+            // Add to parameters array
+            if (parameter_count >= parameter_capacity) {
+                size_t new_capacity = parameter_capacity == 0 ? 4 : parameter_capacity * 2;
+                ArcAstNode **new_parameters =
+                    realloc(parameters, sizeof(ArcAstNode *) * new_capacity);
+                if (!new_parameters) {
+                    free(parameters);
+                    return NULL;
+                }
+                parameters = new_parameters;
+                parameter_capacity = new_capacity;
+            }
+            parameters[parameter_count++] = param;
+
+        } while (match(parser, TOKEN_COMMA));
+    }
+
+    consume(parser, TOKEN_RPAREN, "Expected ')' after parameters");
+
+    // Parse return type
+    ArcAstNode *return_type = NULL;
+    if (match(parser, TOKEN_ARROW)) {
+        return_type = parse_type(parser);
+    }
+
+    // Parse body
+    ArcAstNode *body = parse_block_statement(parser);
+
+    ArcAstNode *node = arc_ast_node_create(parser, AST_DECL_FUNCTION, source_info);
+    if (node) {
+        node->function_decl.fn_token = fn_token;
+        node->function_decl.name = name;
+        node->function_decl.parameter_count = parameter_count;
+        node->function_decl.return_type = return_type;
+        node->function_decl.body = body;
+
+        // Convert parameters to arena/heap allocated array
+        if (parameter_count > 0) {
+            node->function_decl.parameters =
+                (ArcAstNode **)alloc_array(parser, parameter_count, sizeof(ArcAstNode *));
+            if (node->function_decl.parameters) {
+                memcpy(node->function_decl.parameters, parameters,
+                       sizeof(ArcAstNode *) * parameter_count);
+            }
+        } else {
+            node->function_decl.parameters = NULL;
+        }
+    }
+
+    free(parameters);
+    return node;
+}
+
+static ArcAstNode *parse_declaration(ArcParser *parser) {
+    switch (parser->current_token.type) {
+        case TOKEN_KEYWORD_FN:
+            return parse_function_declaration(parser);
+        case TOKEN_KEYWORD_VAR:
+            return parse_variable_declaration(parser);
+        default:
+            arc_parser_error(parser, "Expected declaration");
+            return NULL;
+    }
+}
+
+// === TOP-LEVEL PARSING ===
+
+ArcAstNode *arc_parser_parse_program(ArcParser *parser) {
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcAstNode *program = arc_ast_node_create(parser, AST_PROGRAM, source_info);
+    if (!program)
+        return NULL;
+
+    // Parse declarations using dynamic array
+    ArcAstNode **declarations = NULL;
+    size_t declaration_count = 0;
+    size_t declaration_capacity = 0;
+
+    while (!check(parser, TOKEN_EOF)) {
+        // Skip newlines at top level
+        if (match(parser, TOKEN_NEWLINE)) {
+            continue;
+        }
+
+        ArcAstNode *decl = parse_declaration(parser);
+        if (decl) {
+            // Grow array if needed
+            if (declaration_count >= declaration_capacity) {
+                size_t new_capacity = declaration_capacity == 0 ? 4 : declaration_capacity * 2;
+                ArcAstNode **new_declarations =
+                    realloc(declarations, sizeof(ArcAstNode *) * new_capacity);
+                if (!new_declarations) {
+                    free(declarations);
+                    return program;
+                }
+                declarations = new_declarations;
+                declaration_capacity = new_capacity;
+            }
+            declarations[declaration_count++] = decl;
+        }
+
+        if (parser->panic_mode) {
+            arc_parser_synchronize(parser);
+        }
+    }
+
+    // Convert to arena/heap allocated array
+    program->program.declaration_count = declaration_count;
+    if (declaration_count > 0) {
+        program->program.declarations =
+            (ArcAstNode **)alloc_array(parser, declaration_count, sizeof(ArcAstNode *));
+        if (program->program.declarations) {
+            memcpy(program->program.declarations, declarations,
+                   sizeof(ArcAstNode *) * declaration_count);
+        }
+    } else {
+        program->program.declarations = NULL;
+    }
+
+    free(declarations);
+    return program;
+}
+
+// === AST PRINTING (for debugging) ===
+
+static void print_indent(int depth) {
+    for (int i = 0; i < depth * 2; i++) {
+        printf(" ");
+    }
+}
+
+void arc_ast_node_print(const ArcAstNode *node, int depth) {
+    if (!node) {
+        print_indent(depth);
+        printf("(null)\n");
+        return;
+    }
+
+    print_indent(depth);
+
+    switch (node->type) {
+        case AST_PROGRAM:
+            printf("Program (%zu declarations)\n", node->program.declaration_count);
+            for (size_t i = 0; i < node->program.declaration_count; i++) {
+                arc_ast_node_print(node->program.declarations[i], depth + 1);
+            }
+            break;
+
+        case AST_DECL_FUNCTION:
+            printf("FunctionDecl '%.*s' (%zu params)\n", (int)node->function_decl.name.length,
+                   node->function_decl.name.start, node->function_decl.parameter_count);
+            for (size_t i = 0; i < node->function_decl.parameter_count; i++) {
+                arc_ast_node_print(node->function_decl.parameters[i], depth + 1);
+            }
+            if (node->function_decl.return_type) {
+                print_indent(depth + 1);
+                printf("ReturnType:\n");
+                arc_ast_node_print(node->function_decl.return_type, depth + 2);
+            }
+            print_indent(depth + 1);
+            printf("Body:\n");
+            arc_ast_node_print(node->function_decl.body, depth + 2);
+            break;
+        case AST_STMT_VAR_DECL:
+            printf("VariableDecl '%.*s'\n", (int)node->var_decl_stmt.name.length,
+                   node->var_decl_stmt.name.start);
+            if (node->var_decl_stmt.type_annotation) {
+                print_indent(depth + 1);
+                printf("Type:\n");
+                arc_ast_node_print(node->var_decl_stmt.type_annotation, depth + 2);
+            }
+            if (node->var_decl_stmt.initializer) {
+                print_indent(depth + 1);
+                printf("Initializer:\n");
+                arc_ast_node_print(node->var_decl_stmt.initializer, depth + 2);
+            }
+            break;
+
+        case AST_PARAMETER:
+            printf("Parameter '%.*s'\n", (int)node->parameter.name.length,
+                   node->parameter.name.start);
+            if (node->parameter.type_annotation) {
+                arc_ast_node_print(node->parameter.type_annotation, depth + 1);
+            }
+            break;
+
+        case AST_STMT_BLOCK:
+            printf("Block (%zu statements)\n", node->block_stmt.statement_count);
+            for (size_t i = 0; i < node->block_stmt.statement_count; i++) {
+                arc_ast_node_print(node->block_stmt.statements[i], depth + 1);
+            }
+            break;
+
+        case AST_STMT_EXPRESSION:
+            printf("ExpressionStmt\n");
+            arc_ast_node_print(node->expr_stmt.expression, depth + 1);
+            break;
+        case AST_STMT_IF:
+            printf("IfStmt\n");
+            print_indent(depth + 1);
+            printf("Condition:\n");
+            arc_ast_node_print(node->if_stmt.condition, depth + 2);
+            print_indent(depth + 1);
+            printf("Then:\n");
+            arc_ast_node_print(node->if_stmt.then_branch, depth + 2);
+            if (node->if_stmt.else_branch) {
+                print_indent(depth + 1);
+                printf("Else:\n");
+                arc_ast_node_print(node->if_stmt.else_branch, depth + 2);
+            }
+            break;
+
+        case AST_STMT_WHILE:
+            printf("WhileStmt\n");
+            print_indent(depth + 1);
+            printf("Condition:\n");
+            arc_ast_node_print(node->while_stmt.condition, depth + 2);
+            print_indent(depth + 1);
+            printf("Body:\n");
+            arc_ast_node_print(node->while_stmt.body, depth + 2);
+            break;
+
+        case AST_STMT_RETURN:
+            printf("ReturnStmt\n");
+            if (node->return_stmt.value) {
+                arc_ast_node_print(node->return_stmt.value, depth + 1);
+            }
+            break;
+
+        case AST_EXPR_BINARY:
+            printf("BinaryExpr (op=%d)\n", node->binary_expr.op_type);
+            print_indent(depth + 1);
+            printf("Left:\n");
+            arc_ast_node_print(node->binary_expr.left, depth + 2);
+            print_indent(depth + 1);
+            printf("Right:\n");
+            arc_ast_node_print(node->binary_expr.right, depth + 2);
+            break;
+
+        case AST_EXPR_UNARY:
+            printf("UnaryExpr (op=%d)\n", node->unary_expr.op_type);
+            arc_ast_node_print(node->unary_expr.operand, depth + 1);
+            break;
+
+        case AST_EXPR_CALL:
+            printf("CallExpr (%zu args)\n", node->call_expr.argument_count);
+            print_indent(depth + 1);
+            printf("Function:\n");
+            arc_ast_node_print(node->call_expr.function, depth + 2);
+            for (size_t i = 0; i < node->call_expr.argument_count; i++) {
+                print_indent(depth + 1);
+                printf("Arg %zu:\n", i);
+                arc_ast_node_print(node->call_expr.arguments[i], depth + 2);
+            }
+            break;
+
+        case AST_IDENTIFIER:
+            printf("Identifier '%.*s'\n", (int)node->identifier.token.length,
+                   node->identifier.token.start);
+            break;
+
+        case AST_LITERAL_INT:
+            printf("IntLiteral '%.*s'\n", (int)node->literal_int.token.length,
+                   node->literal_int.token.start);
+            break;
+
+        case AST_LITERAL_FLOAT:
+            printf("FloatLiteral '%.*s'\n", (int)node->literal_float.token.length,
+                   node->literal_float.token.start);
+            break;
+
+        case AST_LITERAL_STRING:
+            printf("StringLiteral '%.*s'\n", (int)node->literal_string.token.length,
+                   node->literal_string.token.start);
+            break;
+
+        case AST_LITERAL_BOOL:
+            printf("BoolLiteral '%.*s'\n", (int)node->literal_bool.token.length,
+                   node->literal_bool.token.start);
+            break;
+
+        case AST_TYPE_PRIMITIVE:
+            printf("PrimitiveType '%.*s'\n", (int)node->type_primitive.token.length,
+                   node->type_primitive.token.start);
+            break;
+
+        case AST_STMT_FOR:
+            printf("ForStmt '%.*s' in\n", (int)node->for_stmt.iterator.length,
+                   node->for_stmt.iterator.start);
+            print_indent(depth + 1);
+            printf("Iterable:\n");
+            arc_ast_node_print(node->for_stmt.iterable, depth + 2);
+            print_indent(depth + 1);
+            printf("Body:\n");
+            arc_ast_node_print(node->for_stmt.body, depth + 2);
+            break;
+
+        case AST_STMT_BREAK:
+            printf("BreakStmt\n");
+            break;
+
+        case AST_STMT_CONTINUE:
+            printf("ContinueStmt\n");
+            break;
+
+        case AST_EXPR_ARRAY_LITERAL:
+            printf("ArrayLiteral (%zu elements)\n", node->array_literal_expr.element_count);
+            for (size_t i = 0; i < node->array_literal_expr.element_count; i++) {
+                print_indent(depth + 1);
+                printf("Element %zu:\n", i);
+                arc_ast_node_print(node->array_literal_expr.elements[i], depth + 2);
+            }
+            break;
+
+        case AST_EXPR_INDEX:
+            printf("IndexExpr\n");
+            print_indent(depth + 1);
+            printf("Object:\n");
+            arc_ast_node_print(node->index_expr.object, depth + 2);
+            print_indent(depth + 1);
+            printf("Index:\n");
+            arc_ast_node_print(node->index_expr.index, depth + 2);
+            break;
+
+        case AST_EXPR_FIELD_ACCESS:
+            printf("FieldAccess .%.*s\n", (int)node->field_access_expr.field_name.length,
+                   node->field_access_expr.field_name.start);
+            print_indent(depth + 1);
+            printf("Object:\n");
+            arc_ast_node_print(node->field_access_expr.object, depth + 2);
+            break;
+
+        case AST_LITERAL_CHAR:
+            printf("CharLiteral '%.*s'\n", (int)node->literal_char.token.length,
+                   node->literal_char.token.start);
+            break;
+
+        case AST_LITERAL_NULL:
+            printf("NullLiteral\n");
+            break;
+
+        case AST_TYPE_POINTER:
+            printf("PointerType\n");
+            arc_ast_node_print(node->type_pointer.pointed_type, depth + 1);
+            break;
+
+        case AST_TYPE_ARRAY:
+            printf("ArrayType\n");
+            print_indent(depth + 1);
+            printf("Size:\n");
+            arc_ast_node_print(node->type_array.size_expr, depth + 2);
+            print_indent(depth + 1);
+            printf("ElementType:\n");
+            arc_ast_node_print(node->type_array.element_type, depth + 2);
+            break;
+
+        case AST_TYPE_SLICE:
+            printf("SliceType\n");
+            arc_ast_node_print(node->type_slice.element_type, depth + 1);
+            break;
+
+        default:
+            printf("Unknown node type: %d\n", node->type);
+            break;
+    }
+}
