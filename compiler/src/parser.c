@@ -17,6 +17,7 @@ static ArcAstNode *parse_statement(ArcParser *parser);
 static ArcAstNode *parse_expression(ArcParser *parser);
 static ArcAstNode *parse_primary(ArcParser *parser);
 static ArcAstNode *parse_type(ArcParser *parser);
+static ArcAstNode *parse_variable_declaration(ArcParser *parser);
 
 // Utility functions
 static void advance(ArcParser *parser);
@@ -568,6 +569,11 @@ static ArcToken consume(ArcParser *parser, ArcTokenType type, const char *messag
 void arc_parser_synchronize(ArcParser *parser) {
     parser->panic_mode = false;
     parser->synchronizing = true;
+
+    // Always advance at least once to avoid infinite loops
+    if (parser->current_token.type != TOKEN_EOF) {
+        advance(parser);
+    }
 
     while (parser->current_token.type != TOKEN_EOF) {
         if (parser->previous_token.type == TOKEN_SEMICOLON) {
@@ -1131,7 +1137,23 @@ static ArcAstNode *parse_type(ArcParser *parser) {
 
 static ArcAstNode *parse_expression_statement(ArcParser *parser) {
     ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+
+    // Check if we're trying to parse something that's not an expression
+    if (check(parser, TOKEN_RBRACE) || check(parser, TOKEN_EOF)) {
+        arc_parser_error(parser, "Unexpected token in expression statement");
+        return NULL;
+    }
+
     ArcAstNode *expr = parse_expression(parser);
+
+    // If expression parsing failed, try to recover
+    if (!expr) {
+        // Skip tokens until we find a semicolon or sync point
+        while (!check(parser, TOKEN_SEMICOLON) && !check(parser, TOKEN_EOF) &&
+               !check(parser, TOKEN_RBRACE)) {
+            advance(parser);
+        }
+    }
 
     consume(parser, TOKEN_SEMICOLON, "Expected ';' after expression");
 
@@ -1161,6 +1183,9 @@ static ArcAstNode *parse_block_statement(ArcParser *parser) {
     size_t statement_capacity = 0;
 
     while (!check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
+        printf("parse_block_statement: parsing statement, current token = %s\n",
+               arc_token_type_to_string(parser->current_token.type));
+
         ArcAstNode *stmt = parse_statement(parser);
         if (stmt) {
             // Grow array if needed
@@ -1176,6 +1201,18 @@ static ArcAstNode *parse_block_statement(ArcParser *parser) {
                 statement_capacity = new_capacity;
             }
             statements[statement_count++] = stmt;
+        } else {
+            // If parse_statement returns NULL, we might be at the end of the block
+            // or encountered an error. Check if we're at a valid stopping point.
+            if (check(parser, TOKEN_RBRACE)) {
+                printf("parse_block_statement: reached end of block\n");
+                break;
+            }
+
+            // Skip the problematic token to avoid infinite loop
+            printf("parse_block_statement: skipping problematic token %s\n",
+                   arc_token_type_to_string(parser->current_token.type));
+            advance(parser);
         }
 
         if (parser->panic_mode) {
@@ -1305,6 +1342,15 @@ static ArcAstNode *parse_continue_statement(ArcParser *parser) {
 }
 
 static ArcAstNode *parse_statement(ArcParser *parser) {
+    printf("parse_statement: current token = %s\n",
+           arc_token_type_to_string(parser->current_token.type));
+
+    // Skip newlines at statement level - but don't recurse infinitely
+    while (match(parser, TOKEN_NEWLINE)) {
+        printf("parse_statement: skipping newline\n");
+        // Continue the loop to consume all consecutive newlines
+    }
+
     switch (parser->current_token.type) {
         case TOKEN_KEYWORD_IF:
             return parse_if_statement(parser);
@@ -1320,7 +1366,17 @@ static ArcAstNode *parse_statement(ArcParser *parser) {
             return parse_continue_statement(parser);
         case TOKEN_LBRACE:
             return parse_block_statement(parser);
+        case TOKEN_KEYWORD_VAR:
+            return parse_variable_declaration(parser);
+
+        // Handle block terminators
+        case TOKEN_RBRACE:
+        case TOKEN_EOF:
+            printf("parse_statement: reached end of block/file\n");
+            return NULL;  // Let the calling function handle this
+
         default:
+            printf("parse_statement: defaulting to expression statement\n");
             return parse_expression_statement(parser);
     }
 }
@@ -1356,12 +1412,17 @@ static ArcAstNode *parse_variable_declaration(ArcParser *parser) {
 }
 
 static ArcAstNode *parse_function_declaration(ArcParser *parser) {
+    printf("parse_function_declaration: starting\n");
     ArcSourceInfo source_info = arc_parser_current_source_info(parser);
     ArcToken fn_token = consume(parser, TOKEN_KEYWORD_FN, "Expected 'fn'");
+    printf("parse_function_declaration: consumed 'fn'\n");
 
     ArcToken name = consume(parser, TOKEN_IDENTIFIER, "Expected function name");
+    printf("parse_function_declaration: consumed function name '%.*s'\n", (int)name.length,
+           name.start);
 
     consume(parser, TOKEN_LPAREN, "Expected '(' after function name");
+    printf("parse_function_declaration: consumed '('\n");
 
     // Parse parameters
     ArcAstNode **parameters = NULL;
@@ -1369,6 +1430,7 @@ static ArcAstNode *parse_function_declaration(ArcParser *parser) {
     size_t parameter_capacity = 0;
 
     if (!check(parser, TOKEN_RPAREN)) {
+        printf("parse_function_declaration: parsing parameters\n");
         do {
             // Parse parameter: name: type
             ArcSourceInfo param_source = arc_parser_current_source_info(parser);
@@ -1403,16 +1465,20 @@ static ArcAstNode *parse_function_declaration(ArcParser *parser) {
         } while (match(parser, TOKEN_COMMA));
     }
 
+    printf("parse_function_declaration: consuming ')'\n");
     consume(parser, TOKEN_RPAREN, "Expected ')' after parameters");
 
     // Parse return type
     ArcAstNode *return_type = NULL;
     if (match(parser, TOKEN_ARROW)) {
+        printf("parse_function_declaration: parsing return type\n");
         return_type = parse_type(parser);
     }
 
     // Parse body
+    printf("parse_function_declaration: parsing body\n");
     ArcAstNode *body = parse_block_statement(parser);
+    printf("parse_function_declaration: finished parsing body\n");
 
     ArcAstNode *node = arc_ast_node_create(parser, AST_DECL_FUNCTION, source_info);
     if (node) {
@@ -1440,13 +1506,22 @@ static ArcAstNode *parse_function_declaration(ArcParser *parser) {
 }
 
 static ArcAstNode *parse_declaration(ArcParser *parser) {
+    ArcToken start_token = parser->current_token;  // Track starting position
+
     switch (parser->current_token.type) {
         case TOKEN_KEYWORD_FN:
             return parse_function_declaration(parser);
         case TOKEN_KEYWORD_VAR:
             return parse_variable_declaration(parser);
         default:
-            arc_parser_error(parser, "Expected declaration");
+            arc_parser_error(parser, "Expected declaration, got '%.*s'",
+                             (int)parser->current_token.length, parser->current_token.start);
+
+            // If we haven't advanced, force advancement to prevent infinite loop
+            if (parser->current_token.type == start_token.type &&
+                parser->current_token.start == start_token.start) {
+                advance(parser);
+            }
             return NULL;
     }
 }
@@ -1459,18 +1534,26 @@ ArcAstNode *arc_parser_parse_program(ArcParser *parser) {
     if (!program)
         return NULL;
 
-    // Parse declarations using dynamic array
     ArcAstNode **declarations = NULL;
     size_t declaration_count = 0;
     size_t declaration_capacity = 0;
 
+    printf("Parsing program, current token: %s\n",
+           arc_token_type_to_string(parser->current_token.type));
+
     while (!check(parser, TOKEN_EOF)) {
-        // Skip newlines at top level
-        if (match(parser, TOKEN_NEWLINE)) {
+        printf("Loop iteration, current token: %s\n",
+               arc_token_type_to_string(parser->current_token.type));
+
+        // Skip newlines and comments at top level
+        if (match(parser, TOKEN_NEWLINE) || match(parser, TOKEN_COMMENT)) {
+            printf("Skipping %s\n", arc_token_type_to_string(parser->previous_token.type));
             continue;
         }
 
         ArcAstNode *decl = parse_declaration(parser);
+        printf("Parsed declaration: %p\n", (void *)decl);
+
         if (decl) {
             // Grow array if needed
             if (declaration_count >= declaration_capacity) {
@@ -1485,10 +1568,18 @@ ArcAstNode *arc_parser_parse_program(ArcParser *parser) {
                 declaration_capacity = new_capacity;
             }
             declarations[declaration_count++] = decl;
+            printf("Added declaration %zu\n", declaration_count);
         }
 
         if (parser->panic_mode) {
+            printf("Parser in panic mode, synchronizing\n");
             arc_parser_synchronize(parser);
+        }
+
+        // Safety check to prevent infinite loops
+        if (declaration_count > 100) {
+            printf("Too many declarations, breaking\n");
+            break;
         }
     }
 

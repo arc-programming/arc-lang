@@ -1,5 +1,6 @@
 #include "arc/common.h"
 #include "arc/lexer.h"
+#include "arc/parser.h"
 #include <stdio.h>
 
 // Quick lexer test function
@@ -109,16 +110,59 @@ int main(int argc, char *argv[]) {
         FREE(file_content);
         return 1;
     }
-
     printf("=== File lexing complete ===\n");
-    FREE(file_content);
 
-    // TODO:
-    // 4. Initialize parser
-    // 5. Parse AST
-    // 6. Semantic analysis
-    // 7. Code generation
+    // Test parser on the file
+    printf("\n=== Parsing file: %s ===\n", argv[1]);
 
-    printf("Compilation placeholder complete.\n");
+    // Reset lexer for parsing
+    arc_lexer_init(&lexer, file_content, argv[1]);
+
+    // Create arena for AST memory management
+    ArcArena *arena = arc_arena_create(0);  // Use default size
+    if (!arena) {
+        printf("*** Failed to create arena for parser! ***\n");
+        FREE(file_content);
+        return 1;
+    }  // Initialize parser
+    ArcParser parser;
+    arc_parser_init(&parser, &lexer, arena);
+
+    printf("Starting parser...\n");
+
+    // Parse the program
+    ArcAstNode *ast = arc_parser_parse_program(&parser);
+
+    printf("Parser finished.\n");
+
+    if (arc_parser_had_error(&parser)) {
+        printf("*** Parser encountered errors! ***\n");
+
+        // Print diagnostics
+        const ArcDiagnostic *diag = arc_parser_get_diagnostics(&parser);
+        while (diag) {
+            printf("Error: %s\n", diag->message);
+            diag = diag->next;
+        }
+
+        arc_parser_cleanup(&parser);
+        arc_arena_destroy(arena);
+        FREE(file_content);
+        return 1;
+    }
+
+    // Print AST
+    printf("=== AST Structure ===\n");
+    arc_ast_node_print(ast, 0);
+    printf("=== AST Complete ===\n");
+
+    // Cleanup
+    arc_parser_cleanup(&parser);
+    arc_arena_destroy(arena);
+    FREE(file_content);  // TODO:
+    // 4. Semantic analysis
+    // 5. Code generation
+
+    printf("Compilation complete.\n");
     return 0;
 }
