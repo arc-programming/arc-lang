@@ -19,6 +19,7 @@ IndentPPDirectives: None
 IndentWrappedFunctionNames: false
 IndentAccessModifiers: false
 IndentExternBlock: AfterExternBlock
+InsertTrailingNewline: true
 
 # Line length and breaking
 ColumnLimit: 100
@@ -107,6 +108,7 @@ ConstructorInitializerAllOnOneLineOrOnePerLine: false
 ConstructorInitializerIndentWidth: 4
 ExperimentalAutoDetectBinPacking: false
 FixNamespaceComments: true
+InsertNewlineAtEOF: true
 IncludeCategories:
   - Regex: '^"(llvm|llvm-c|clang|clang-c)/'
     Priority: 2
