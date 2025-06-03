@@ -304,6 +304,34 @@ ArcToken arc_lexer_next_token(ArcLexer *lexer) {
 
     // Handle numbers
     if (isdigit(c)) {
+        // Check for different number bases
+        if (c == '0' && !is_at_end(lexer)) {
+            char next = peek(lexer);
+            if (next == 'x' || next == 'X') {
+                // Hexadecimal
+                advance(lexer);  // Skip 'x'
+                while (isxdigit(peek(lexer))) {
+                    advance(lexer);
+                }
+                return make_token(lexer, TOKEN_NUMBER_INT, token_start, token_loc);
+            } else if (next == 'b' || next == 'B') {
+                // Binary
+                advance(lexer);  // Skip 'b'
+                while (peek(lexer) == '0' || peek(lexer) == '1') {
+                    advance(lexer);
+                }
+                return make_token(lexer, TOKEN_NUMBER_INT, token_start, token_loc);
+            } else if (next == 'o' || next == 'O') {
+                // Octal
+                advance(lexer);  // Skip 'o'
+                while (peek(lexer) >= '0' && peek(lexer) <= '7') {
+                    advance(lexer);
+                }
+                return make_token(lexer, TOKEN_NUMBER_INT, token_start, token_loc);
+            }
+        }
+
+        // Regular decimal number
         while (isdigit(peek(lexer))) {
             advance(lexer);
         }
@@ -314,11 +342,37 @@ ArcToken arc_lexer_next_token(ArcLexer *lexer) {
             while (isdigit(peek(lexer))) {
                 advance(lexer);
             }
+
+            // Check for scientific notation
+            if (peek(lexer) == 'e' || peek(lexer) == 'E') {
+                advance(lexer);  // Skip 'e'
+                if (peek(lexer) == '+' || peek(lexer) == '-') {
+                    advance(lexer);  // Skip sign
+                }
+                while (isdigit(peek(lexer))) {
+                    advance(lexer);
+                }
+            }
+
+            return make_token(lexer, TOKEN_NUMBER_FLOAT, token_start, token_loc);
+        }
+
+        // Check for scientific notation on integers
+        if (peek(lexer) == 'e' || peek(lexer) == 'E') {
+            advance(lexer);  // Skip 'e'
+            if (peek(lexer) == '+' || peek(lexer) == '-') {
+                advance(lexer);  // Skip sign
+            }
+            while (isdigit(peek(lexer))) {
+                advance(lexer);
+            }
             return make_token(lexer, TOKEN_NUMBER_FLOAT, token_start, token_loc);
         }
 
         return make_token(lexer, TOKEN_NUMBER_INT, token_start, token_loc);
-    }  // Handle string literals
+    }
+
+    // Handle string literals
     if (c == '"') {
         while (peek(lexer) != '"' && !is_at_end(lexer)) {
             if (peek(lexer) == '\\') {
