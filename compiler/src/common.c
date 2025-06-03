@@ -7,7 +7,7 @@ void *arc_malloc(size_t size)
     void *ptr = malloc(size);
     if (!ptr && size > 0)
     {
-        arc_report_fatal("Memory allocation failed: requested %zu bytes", size);
+        arc_report_fatal(NULL, "Memory allocation failed: requested %zu bytes", size);
     }
     return ptr;
 }
@@ -17,7 +17,7 @@ void *arc_calloc(size_t count, size_t size)
     void *ptr = calloc(count, size);
     if (!ptr && count > 0 && size > 0)
     {
-        arc_report_fatal("Memory allocation failed: requested %zu elements of %zu bytes", count, size);
+        arc_report_fatal(NULL, "Memory allocation failed: requested %zu elements of %zu bytes", count, size);
     }
     return ptr;
 }
@@ -27,7 +27,7 @@ void *arc_realloc(void *ptr, size_t size)
     void *new_ptr = realloc(ptr, size);
     if (!new_ptr && size > 0)
     {
-        arc_report_fatal("Memory reallocation failed: requested %zu bytes", size);
+        arc_report_fatal(NULL, "Memory reallocation failed: requested %zu bytes", size);
     }
     return new_ptr;
 }
@@ -367,7 +367,7 @@ char *arc_read_file(const char *filename)
     fopen_s(&file, filename, "rb");
     if (!file)
     {
-        arc_report_error("Could not open file: %s", filename);
+        arc_report_error(NULL, "Could not open file: %s", filename);
         return NULL;
     }
 
@@ -378,7 +378,7 @@ char *arc_read_file(const char *filename)
     if (size < 0)
     {
         fclose(file);
-        arc_report_error("Could not determine file size: %s", filename);
+        arc_report_error(NULL, "Could not determine file size: %s", filename);
         return NULL;
     }
 
