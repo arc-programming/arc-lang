@@ -7,23 +7,8 @@ A systems programming language designed for performance-critical applications re
 Arc requires LLVM for code generation. Make sure you have LLVM 15+ installed before building.
 
 ### Prerequisites
-
-- **LLVM 15+**: Required for code generation backend
-- **CMake 3.20+**: Build system
-- **C17 compatible compiler**: GCC, Clang, or MSVC
-
-### Quick Build
-
-**Windows:**
-```cmd
-build.bat
-```
-
-**Unix/Linux/macOS:**
-```bash
-chmod +x build.sh
-./build.sh
-```
+- **CMake**
+- **C Compiler (e.g, clang, gcc, msvc)**
 
 ### Manual Build
 
@@ -33,23 +18,7 @@ cmake -DCMAKE_BUILD_TYPE=Debug ..
 cmake --build .
 ```
 
-### Installing LLVM
 
-**Ubuntu/Debian:**
-```bash
-sudo apt update
-sudo apt install llvm-dev libllvm15-dev
-```
-
-**Windows (vcpkg):**
-```cmd
-vcpkg install llvm[tools]
-```
-
-**macOS:**
-```bash
-brew install llvm
-```
 
 ## Project Structure
 
