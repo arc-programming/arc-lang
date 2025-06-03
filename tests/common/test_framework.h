@@ -4,9 +4,11 @@
 #include "unity.h"
 #include <string.h>
 
-// Suppress Windows deprecation warnings
+// Suppress Windows deprecation warnings (only if not already defined)
 #ifdef _WIN32
+#ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
+#endif
 #pragma warning(push)
 #pragma warning(disable : 4996)
 #endif

@@ -3,10 +3,6 @@
 # Compiler unit test sources
 set(COMPILER_TEST_SOURCES
     unit/test_lexer.c
-    # Add more test files here as you create them:
-    # unit/test_parser.c
-    # unit/test_ast.c
-    # unit/test_error_reporting.c
 )
 
 # Create the compiler tests executable
@@ -24,14 +20,14 @@ target_include_directories(compiler_tests PRIVATE
 
 # Link libraries
 target_link_libraries(compiler_tests
-    arc_compiler_lib    # Your compiler library from compiler/CMakeLists.txt
-    arc_test_common     # Common test utilities
-    unity              # Unity test framework
+    arc_compiler_lib        # Your compiler library (now it exists!)
+    arc_test_common         # Common test utilities
+    unity                   # Unity test framework
 )
 
 # Add compiler options to suppress warnings
 target_compile_options(compiler_tests PRIVATE
-    $<$<C_COMPILER_ID:Clang>:-Wno-deprecated-declarations>
+    $<$<C_COMPILER_ID:Clang>:-Wno-deprecated-declarations -Wno-macro-redefined>
     $<$<C_COMPILER_ID:GNU>:-Wno-deprecated-declarations>
     $<$<C_COMPILER_ID:MSVC>:/wd4996>
 )
@@ -52,28 +48,6 @@ set_tests_properties(CompilerUnitTests PROPERTIES
     TIMEOUT 30
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
-
-# Integration tests (separate executable for later)
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/integration/test_full_compilation.c")
-    add_executable(compiler_integration_tests
-        integration/test_full_compilation.c
-        integration_test_main.c
-    )
-    
-    target_include_directories(compiler_integration_tests PRIVATE
-        ${CMAKE_SOURCE_DIR}/compiler/include/
-        ${CMAKE_SOURCE_DIR}/tests/common/
-        ${unity_SOURCE_DIR}/src/
-    )
-    
-    target_link_libraries(compiler_integration_tests
-        arc_compiler_lib
-        arc_test_common
-        unity
-    )
-    
-    add_test(NAME CompilerIntegrationTests COMMAND compiler_integration_tests)
-endif()
 
 # Copy test fixtures
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fixtures")

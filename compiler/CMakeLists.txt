@@ -4,31 +4,43 @@
 set(COMPILER_EXECUTABLE_NAME arc)
 
 # --- Source Files ---
-set(COMPILER_SOURCES
-    src/main.c
+# Separate library sources from main
+set(COMPILER_LIB_SOURCES
     src/common.c
     src/lexer.c
     # src/lexer/token.c
     # src/utils/memory.c
-    # ... add more .c files here as you create them
+    # ... add more .c files here as you create them (but NOT main.c)
 )
 
-# --- Create the Compiler Executable FIRST ---
-add_executable(${COMPILER_EXECUTABLE_NAME} ${COMPILER_SOURCES})
-message(STATUS "Configuring Arc Compiler: ${COMPILER_EXECUTABLE_NAME}") # Moved message up for clarity
+set(COMPILER_MAIN_SOURCES
+    src/main.c
+)
 
-# --- Include Directories ---
-# Now that 'arc' target exists, we can modify it.
-target_include_directories(${COMPILER_EXECUTABLE_NAME} PUBLIC
+# --- Create the Compiler Library FIRST ---
+# This library contains all the compiler functionality except main()
+add_library(arc_compiler_lib STATIC ${COMPILER_LIB_SOURCES})
+message(STATUS "Configuring Arc Compiler Library: arc_compiler_lib")
+
+# --- Include Directories for Library ---
+target_include_directories(arc_compiler_lib PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include" # For compiler's own headers like arc/lexer.h
 )
-# If you generate arc_config.h (e.g., for version info from CMake)
-# target_include_directories(${COMPILER_EXECUTABLE_NAME} PRIVATE
-#    "${CMAKE_CURRENT_BINARY_DIR}" # For generated headers like arc_config.h
-# )
+
+# --- Create the Compiler Executable ---
+add_executable(${COMPILER_EXECUTABLE_NAME} ${COMPILER_MAIN_SOURCES})
+message(STATUS "Configuring Arc Compiler Executable: ${COMPILER_EXECUTABLE_NAME}")
+
+# --- Include Directories for Executable ---
+target_include_directories(${COMPILER_EXECUTABLE_NAME} PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+
+# --- Link the library to the executable ---
+target_link_libraries(${COMPILER_EXECUTABLE_NAME} PRIVATE arc_compiler_lib)
 
 # --- Compiler Flags ---
-set(ARC_C_FLAGS_LIST "") # Initialize as an empty list (or string, CMake is flexible here)
+set(ARC_C_FLAGS_LIST "") # Initialize as an empty list
 
 if(MSVC)
     # MSVC specific flags
@@ -49,24 +61,31 @@ else()
     endif()
 endif()
 
-# Apply the list of flags
+# Apply the list of flags to both library and executable
+target_compile_options(arc_compiler_lib PRIVATE ${ARC_C_FLAGS_LIST})
 target_compile_options(${COMPILER_EXECUTABLE_NAME} PRIVATE ${ARC_C_FLAGS_LIST})
+
+# --- Windows specific definitions ---
+if(WIN32)
+    target_compile_definitions(arc_compiler_lib PRIVATE
+        _CRT_SECURE_NO_WARNINGS
+        _CRT_NONSTDC_NO_DEPRECATE
+    )
+    target_compile_definitions(${COMPILER_EXECUTABLE_NAME} PRIVATE
+        _CRT_SECURE_NO_WARNINGS
+        _CRT_NONSTDC_NO_DEPRECATE
+    )
+endif()
 
 # --- Link Libraries (Example: LLVM - add when needed) ---
 # if(LLVM_FOUND) # Assuming LLVM_FOUND is set by the top-level CMakeLists.txt
-#     target_link_libraries(${COMPILER_EXECUTABLE_NAME} PRIVATE ${LLVM_LIBRARIES})
+#     target_link_libraries(arc_compiler_lib PRIVATE ${LLVM_LIBRARIES})
 #     if(UNIX AND NOT APPLE)
 #         find_package(Threads REQUIRED)
-#         target_link_libraries(${COMPILER_EXECUTABLE_NAME} PRIVATE Threads::Threads)
+#         target_link_libraries(arc_compiler_lib PRIVATE Threads::Threads)
 #     endif()
 # else()
 #     message(WARNING "LLVM not found by compiler/CMakeLists.txt. Codegen will not work if LLVM is expected.")
-# endif()
-
-# --- Optional: Compiler Tests (can be added later) ---
-# if(ARC_BUILD_TESTS)
-#     enable_testing()
-#     add_subdirectory(tests)
 # endif()
 
 # --- Optional: Configuration Header (arc_config.h) ---
@@ -74,6 +93,6 @@ target_compile_options(${COMPILER_EXECUTABLE_NAME} PRIVATE ${ARC_C_FLAGS_LIST})
 #     "${CMAKE_CURRENT_SOURCE_DIR}/include/arc_config.h.in"
 #     "${CMAKE_CURRENT_BINARY_DIR}/arc_config.h"
 # )
-# target_include_directories(${COMPILER_EXECUTABLE_NAME} PRIVATE
+# target_include_directories(arc_compiler_lib PRIVATE
 #     "${CMAKE_CURRENT_BINARY_DIR}"
 # )
