@@ -2,57 +2,45 @@
 #include <stdarg.h>
 
 // Safe memory allocation functions
-void *arc_malloc(size_t size)
-{
+void *arc_malloc(size_t size) {
     void *ptr = malloc(size);
-    if (!ptr && size > 0)
-    {
+    if (!ptr && size > 0) {
         arc_report_fatal(NULL, "Memory allocation failed: requested %zu bytes", size);
     }
     return ptr;
 }
 
-void *arc_calloc(size_t count, size_t size)
-{
+void *arc_calloc(size_t count, size_t size) {
     void *ptr = calloc(count, size);
-    if (!ptr && count > 0 && size > 0)
-    {
-        arc_report_fatal(NULL, "Memory allocation failed: requested %zu elements of %zu bytes", count, size);
+    if (!ptr && count > 0 && size > 0) {
+        arc_report_fatal(NULL, "Memory allocation failed: requested %zu elements of %zu bytes",
+                         count, size);
     }
     return ptr;
 }
 
-void *arc_realloc(void *ptr, size_t size)
-{
+void *arc_realloc(void *ptr, size_t size) {
     void *new_ptr = realloc(ptr, size);
-    if (!new_ptr && size > 0)
-    {
+    if (!new_ptr && size > 0) {
         arc_report_fatal(NULL, "Memory reallocation failed: requested %zu bytes", size);
     }
     return new_ptr;
 }
 
-void arc_free(void *ptr)
-{
-    if (ptr)
-    {
+void arc_free(void *ptr) {
+    if (ptr) {
         free(ptr);
     }
 }
 
 // Error reporting functions
-void arc_report_error(const ArcSourceLocation *loc, const char *format, ...)
-{
+void arc_report_error(const ArcSourceLocation *loc, const char *format, ...) {
     fprintf(stderr, "[ERROR] ");
-    if (loc)
-    {
-        if (loc->filename)
-        {
+    if (loc) {
+        if (loc->filename) {
             fprintf(stderr, "%s:%zu:%zu: ", loc->filename, loc->line, loc->column);
-        }
-        else
-        {
-            fprintf(stderr, "%zu:%zu: ", loc->line, loc->column); // No filename
+        } else {
+            fprintf(stderr, "%zu:%zu: ", loc->line, loc->column);  // No filename
         }
     }
     va_list args;
@@ -62,18 +50,13 @@ void arc_report_error(const ArcSourceLocation *loc, const char *format, ...)
     fprintf(stderr, "\n");
 }
 
-void arc_report_warning(const ArcSourceLocation *loc, const char *format, ...)
-{
+void arc_report_warning(const ArcSourceLocation *loc, const char *format, ...) {
     fprintf(stderr, "[WARNING] ");
-    if (loc)
-    {
-        if (loc->filename)
-        {
+    if (loc) {
+        if (loc->filename) {
             fprintf(stderr, "%s:%zu:%zu: ", loc->filename, loc->line, loc->column);
-        }
-        else
-        {
-            fprintf(stderr, "%zu:%zu: ", loc->line, loc->column); // No filename
+        } else {
+            fprintf(stderr, "%zu:%zu: ", loc->line, loc->column);  // No filename
         }
     }
     va_list args;
@@ -83,18 +66,13 @@ void arc_report_warning(const ArcSourceLocation *loc, const char *format, ...)
     fprintf(stderr, "\n");
 }
 
-void arc_report_info(const ArcSourceLocation *loc, const char *format, ...)
-{
+void arc_report_info(const ArcSourceLocation *loc, const char *format, ...) {
     fprintf(stdout, "[INFO] ");
-    if (loc)
-    {
-        if (loc->filename)
-        {
+    if (loc) {
+        if (loc->filename) {
             fprintf(stderr, "%s:%zu:%zu: ", loc->filename, loc->line, loc->column);
-        }
-        else
-        {
-            fprintf(stderr, "%zu:%zu: ", loc->line, loc->column); // No filename
+        } else {
+            fprintf(stderr, "%zu:%zu: ", loc->line, loc->column);  // No filename
         }
     }
     va_list args;
@@ -104,18 +82,13 @@ void arc_report_info(const ArcSourceLocation *loc, const char *format, ...)
     fprintf(stdout, "\n");
 }
 
-NORETURN void arc_report_fatal(const ArcSourceLocation *loc, const char *format, ...)
-{
+NORETURN void arc_report_fatal(const ArcSourceLocation *loc, const char *format, ...) {
     fprintf(stderr, "[FATAL] ");
-    if (loc)
-    {
-        if (loc->filename)
-        {
+    if (loc) {
+        if (loc->filename) {
             fprintf(stderr, "%s:%zu:%zu: ", loc->filename, loc->line, loc->column);
-        }
-        else
-        {
-            fprintf(stderr, "%zu:%zu: ", loc->line, loc->column); // No filename
+        } else {
+            fprintf(stderr, "%zu:%zu: ", loc->line, loc->column);  // No filename
         }
     }
     va_list args;
@@ -127,8 +100,7 @@ NORETURN void arc_report_fatal(const ArcSourceLocation *loc, const char *format,
 }
 
 // String utilities
-char *arc_strdup(const char *str)
-{
+char *arc_strdup(const char *str) {
     if (!str)
         return NULL;
 
@@ -138,8 +110,7 @@ char *arc_strdup(const char *str)
     return copy;
 }
 
-char *arc_strndup(const char *str, size_t n)
-{
+char *arc_strndup(const char *str, size_t n) {
     if (!str)
         return NULL;
 
@@ -153,15 +124,13 @@ char *arc_strndup(const char *str, size_t n)
     return copy;
 }
 
-bool arc_str_starts_with(const char *str, const char *prefix)
-{
+bool arc_str_starts_with(const char *str, const char *prefix) {
     if (!str || !prefix)
         return false;
     return strncmp(str, prefix, strlen(prefix)) == 0;
 }
 
-bool arc_str_ends_with(const char *str, const char *suffix)
-{
+bool arc_str_ends_with(const char *str, const char *suffix) {
     if (!str || !suffix)
         return false;
 
@@ -175,8 +144,7 @@ bool arc_str_ends_with(const char *str, const char *suffix)
 }
 
 // Dynamic array (vector) implementation
-arc_vector_t *arc_vector_create(size_t element_size)
-{
+arc_vector_t *arc_vector_create(size_t element_size) {
     arc_vector_t *vec = MALLOC(sizeof(arc_vector_t));
     vec->data = MALLOC(ARC_DEFAULT_VECTOR_CAPACITY * element_size);
     vec->size = 0;
@@ -185,22 +153,18 @@ arc_vector_t *arc_vector_create(size_t element_size)
     return vec;
 }
 
-void arc_vector_destroy(arc_vector_t *vec)
-{
-    if (vec)
-    {
+void arc_vector_destroy(arc_vector_t *vec) {
+    if (vec) {
         FREE(vec->data);
         FREE(vec);
     }
 }
 
-void arc_vector_push(arc_vector_t *vec, const void *element)
-{
+void arc_vector_push(arc_vector_t *vec, const void *element) {
     if (!vec || !element)
         return;
 
-    if (vec->size >= vec->capacity)
-    {
+    if (vec->size >= vec->capacity) {
         vec->capacity *= 2;
         vec->data = REALLOC(vec->data, vec->capacity * vec->element_size);
     }
@@ -209,41 +173,34 @@ void arc_vector_push(arc_vector_t *vec, const void *element)
     vec->size++;
 }
 
-void *arc_vector_get(arc_vector_t *vec, size_t index)
-{
+void *arc_vector_get(arc_vector_t *vec, size_t index) {
     if (!vec || index >= vec->size)
         return NULL;
     return (char *)vec->data + index * vec->element_size;
 }
 
-void arc_vector_clear(arc_vector_t *vec)
-{
-    if (vec)
-    {
+void arc_vector_clear(arc_vector_t *vec) {
+    if (vec) {
         vec->size = 0;
     }
 }
 
-size_t arc_vector_size(arc_vector_t *vec)
-{
+size_t arc_vector_size(arc_vector_t *vec) {
     return vec ? vec->size : 0;
 }
 
 // Simple hash function
-static size_t arc_hash_string(const char *str, size_t bucket_count)
-{
+static size_t arc_hash_string(const char *str, size_t bucket_count) {
     size_t hash = 5381;
     int c;
-    while ((c = *str++))
-    {
+    while ((c = *str++)) {
         hash = ((hash << 5) + hash) + c;
     }
     return hash % bucket_count;
 }
 
 // Hash table implementation
-arc_hash_table_t *arc_hash_table_create(size_t initial_capacity)
-{
+arc_hash_table_t *arc_hash_table_create(size_t initial_capacity) {
     arc_hash_table_t *table = MALLOC(sizeof(arc_hash_table_t));
     table->bucket_count = initial_capacity > 0 ? initial_capacity : ARC_DEFAULT_HASH_TABLE_CAPACITY;
     table->buckets = CALLOC(table->bucket_count, sizeof(arc_hash_entry_t *));
@@ -251,16 +208,13 @@ arc_hash_table_t *arc_hash_table_create(size_t initial_capacity)
     return table;
 }
 
-void arc_hash_table_destroy(arc_hash_table_t *table)
-{
+void arc_hash_table_destroy(arc_hash_table_t *table) {
     if (!table)
         return;
 
-    for (size_t i = 0; i < table->bucket_count; i++)
-    {
+    for (size_t i = 0; i < table->bucket_count; i++) {
         arc_hash_entry_t *entry = table->buckets[i];
-        while (entry)
-        {
+        while (entry) {
             arc_hash_entry_t *next = entry->next;
             FREE(entry->key);
             FREE(entry);
@@ -272,8 +226,7 @@ void arc_hash_table_destroy(arc_hash_table_t *table)
     FREE(table);
 }
 
-void arc_hash_table_insert(arc_hash_table_t *table, const char *key, void *value)
-{
+void arc_hash_table_insert(arc_hash_table_t *table, const char *key, void *value) {
     if (!table || !key)
         return;
 
@@ -281,11 +234,9 @@ void arc_hash_table_insert(arc_hash_table_t *table, const char *key, void *value
     arc_hash_entry_t *entry = table->buckets[hash];
 
     // Check if key already exists
-    while (entry)
-    {
-        if (strcmp(entry->key, key) == 0)
-        {
-            entry->value = value; // Update existing
+    while (entry) {
+        if (strcmp(entry->key, key) == 0) {
+            entry->value = value;  // Update existing
             return;
         }
         entry = entry->next;
@@ -300,18 +251,15 @@ void arc_hash_table_insert(arc_hash_table_t *table, const char *key, void *value
     table->size++;
 }
 
-void *arc_hash_table_get(arc_hash_table_t *table, const char *key)
-{
+void *arc_hash_table_get(arc_hash_table_t *table, const char *key) {
     if (!table || !key)
         return NULL;
 
     size_t hash = arc_hash_string(key, table->bucket_count);
     arc_hash_entry_t *entry = table->buckets[hash];
 
-    while (entry)
-    {
-        if (strcmp(entry->key, key) == 0)
-        {
+    while (entry) {
+        if (strcmp(entry->key, key) == 0) {
             return entry->value;
         }
         entry = entry->next;
@@ -320,13 +268,11 @@ void *arc_hash_table_get(arc_hash_table_t *table, const char *key)
     return NULL;
 }
 
-bool arc_hash_table_contains(arc_hash_table_t *table, const char *key)
-{
+bool arc_hash_table_contains(arc_hash_table_t *table, const char *key) {
     return arc_hash_table_get(table, key) != NULL;
 }
 
-void arc_hash_table_remove(arc_hash_table_t *table, const char *key)
-{
+void arc_hash_table_remove(arc_hash_table_t *table, const char *key) {
     if (!table || !key)
         return;
 
@@ -334,16 +280,11 @@ void arc_hash_table_remove(arc_hash_table_t *table, const char *key)
     arc_hash_entry_t *entry = table->buckets[hash];
     arc_hash_entry_t *prev = NULL;
 
-    while (entry)
-    {
-        if (strcmp(entry->key, key) == 0)
-        {
-            if (prev)
-            {
+    while (entry) {
+        if (strcmp(entry->key, key) == 0) {
+            if (prev) {
                 prev->next = entry->next;
-            }
-            else
-            {
+            } else {
                 table->buckets[hash] = entry->next;
             }
 
@@ -358,15 +299,13 @@ void arc_hash_table_remove(arc_hash_table_t *table, const char *key)
 }
 
 // File utilities
-char *arc_read_file(const char *filename)
-{
+char *arc_read_file(const char *filename) {
     if (!filename)
         return NULL;
 
     FILE *file = NULL;
     fopen_s(&file, filename, "rb");
-    if (!file)
-    {
+    if (!file) {
         arc_report_error(NULL, "Could not open file: %s", filename);
         return NULL;
     }
@@ -375,8 +314,7 @@ char *arc_read_file(const char *filename)
     long size = ftell(file);
     fseek(file, 0, SEEK_SET);
 
-    if (size < 0)
-    {
+    if (size < 0) {
         fclose(file);
         arc_report_error(NULL, "Could not determine file size: %s", filename);
         return NULL;
@@ -390,23 +328,20 @@ char *arc_read_file(const char *filename)
     return content;
 }
 
-bool arc_file_exists(const char *filename)
-{
+bool arc_file_exists(const char *filename) {
     if (!filename)
         return false;
 
     FILE *file = NULL;
     fopen_s(&file, filename, "r");
-    if (file)
-    {
+    if (file) {
         fclose(file);
         return true;
     }
     return false;
 }
 
-char *arc_get_file_extension(const char *filename)
-{
+char *arc_get_file_extension(const char *filename) {
     if (!filename)
         return NULL;
 
@@ -417,8 +352,7 @@ char *arc_get_file_extension(const char *filename)
     return arc_strdup(dot + 1);
 }
 
-char *arc_get_basename(const char *path)
-{
+char *arc_get_basename(const char *path) {
     if (!path)
         return NULL;
 
@@ -429,8 +363,7 @@ char *arc_get_basename(const char *path)
     return arc_strdup(last_sep + 1);
 }
 
-char *arc_get_dirname(const char *path)
-{
+char *arc_get_dirname(const char *path) {
     if (!path)
         return NULL;
 

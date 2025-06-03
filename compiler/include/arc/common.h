@@ -1,13 +1,13 @@
 #ifndef ARC_COMMON_H
 #define ARC_COMMON_H
 
-#include <stdio.h>   // For printf (debugging), file operations eventually
-#include <stdlib.h>  // For malloc, free, exit, NULL
-#include <string.h>  // For strlen, strcpy, strcmp, memcpy, memset
-#include <stdbool.h> // For bool, true, false
-#include <stdint.h>  // For fixed-width integer types like uint32_t, int64_t
-#include <stddef.h>  // For size_t, ptrdiff_t, NULL (again, but good practice)
-#include <assert.h>  // For assert() macro, very useful for debugging
+#include <assert.h>   // For assert() macro, very useful for debugging
+#include <stdbool.h>  // For bool, true, false
+#include <stddef.h>   // For size_t, ptrdiff_t, NULL (again, but good practice)
+#include <stdint.h>   // For fixed-width integer types like uint32_t, int64_t
+#include <stdio.h>    // For printf (debugging), file operations eventually
+#include <stdlib.h>   // For malloc, free, exit, NULL
+#include <string.h>   // For strlen, strcpy, strcmp, memcpy, memset
 
 // Platform-specific includes and definitions
 #ifdef _WIN32
@@ -45,11 +45,11 @@
 void *arc_malloc(size_t size);
 void *arc_calloc(size_t count, size_t size);
 void *arc_realloc(void *ptr, size_t size);
+
 void arc_free(void *ptr);
 
 // Error handling
-typedef enum
-{
+typedef enum {
     ARC_SUCCESS = 0,
     ARC_ERROR_MEMORY,
     ARC_ERROR_FILE_NOT_FOUND,
@@ -59,8 +59,7 @@ typedef enum
     ARC_ERROR_INTERNAL
 } arc_error_t;
 
-typedef struct
-{
+typedef struct {
     const char *filename;
     size_t line;
     size_t column;
@@ -80,8 +79,7 @@ bool arc_str_starts_with(const char *str, const char *prefix);
 bool arc_str_ends_with(const char *str, const char *suffix);
 
 // Dynamic array (vector) structure - useful for tokens, AST nodes, etc.
-typedef struct
-{
+typedef struct {
     void *data;
     size_t size;
     size_t capacity;
@@ -96,15 +94,13 @@ void arc_vector_clear(arc_vector_t *vec);
 size_t arc_vector_size(arc_vector_t *vec);
 
 // Hash table for symbol tables
-typedef struct arc_hash_entry
-{
+typedef struct arc_hash_entry {
     char *key;
     void *value;
     struct arc_hash_entry *next;
 } arc_hash_entry_t;
 
-typedef struct
-{
+typedef struct {
     arc_hash_entry_t **buckets;
     size_t bucket_count;
     size_t size;
@@ -126,8 +122,10 @@ char *arc_get_dirname(const char *path);
 
 // Debug macros
 #ifdef DEBUG
-#define ARC_DEBUG(fmt, ...) fprintf(stderr, "[DEBUG] %s:%d: " fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__)
-#define ARC_TRACE(fmt, ...) fprintf(stderr, "[TRACE] %s:%d in %s(): " fmt "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__)
+#define ARC_DEBUG(fmt, ...)                                                                        \
+    fprintf(stderr, "[DEBUG] %s:%d: " fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__)
+#define ARC_TRACE(fmt, ...)                                                                        \
+    fprintf(stderr, "[TRACE] %s:%d in %s(): " fmt "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__)
 #else
 #define ARC_DEBUG(fmt, ...)
 #define ARC_TRACE(fmt, ...)

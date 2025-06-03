@@ -5,6 +5,8 @@ project(ArcLang
     DESCRIPTION "The Arc Programming Language Project"
     LANGUAGES C)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Set the C standard for the whole project
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
