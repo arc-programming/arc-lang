@@ -58,11 +58,18 @@ typedef enum {
     ARC_ERROR_INTERNAL
 } arc_error_t;
 
+typedef struct {
+    const char* filename;
+    size_t line;
+    size_t column;
+    size_t offset;
+} ArcSourceLocation;
+
 // Error reporting
-void arc_error(const char* format, ...);
-void arc_warning(const char* format, ...);
-void arc_info(const char* format, ...);
-NORETURN void arc_fatal(const char* format, ...);
+void arc_report_error(const ArcSourceLocation* loc, const char* format, ...);
+void arc_report_warning(const ArcSourceLocation* loc, const char* format, ...);
+void arc_report_info(const ArcSourceLocation* loc, const char* format, ...);
+NORETURN void arc_report_fatal(const ArcSourceLocation* loc, const char* format, ...);
 
 // String utilities
 char* arc_strdup(const char* str);
