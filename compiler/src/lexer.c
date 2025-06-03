@@ -484,6 +484,10 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "COMMA";
         case TOKEN_DOT:
             return "DOT";
+        case TOKEN_DOT_DOT:
+            return "DOT_DOT";
+        case TOKEN_DOT_DOT_DOT:
+            return "DOT_DOT_DOT";
         case TOKEN_MINUS:
             return "MINUS";
         case TOKEN_PLUS:
@@ -514,8 +518,44 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "LESS";
         case TOKEN_LESS_EQUAL:
             return "LESS_EQUAL";
+        case TOKEN_LEFT_SHIFT:
+            return "LEFT_SHIFT";
+        case TOKEN_RIGHT_SHIFT:
+            return "RIGHT_SHIFT";
         case TOKEN_PIPELINE:
             return "PIPELINE";
+        case TOKEN_PIPE:
+            return "PIPE";
+        case TOKEN_PIPE_PIPE:
+            return "PIPE_PIPE";
+        case TOKEN_PIPE_EQUAL:
+            return "PIPE_EQUAL";
+        case TOKEN_AMPERSAND:
+            return "AMPERSAND";
+        case TOKEN_AMPERSAND_AMPERSAND:
+            return "AMPERSAND_AMPERSAND";
+        case TOKEN_AMPERSAND_EQUAL:
+            return "AMPERSAND_EQUAL";
+        case TOKEN_PLUS_EQUAL:
+            return "PLUS_EQUAL";
+        case TOKEN_MINUS_EQUAL:
+            return "MINUS_EQUAL";
+        case TOKEN_SLASH_EQUAL:
+            return "SLASH_EQUAL";
+        case TOKEN_CARET_EQUAL:
+            return "CARET_EQUAL";
+        case TOKEN_QUESTION:
+            return "QUESTION";
+        case TOKEN_COLON:
+            return "COLON";
+        case TOKEN_AT:
+            return "AT";
+        case TOKEN_HASH:
+            return "HASH";
+        case TOKEN_TILDE:
+            return "TILDE";
+        case TOKEN_ARROW:
+            return "ARROW";
         case TOKEN_IDENTIFIER:
             return "IDENTIFIER";
         case TOKEN_STRING_LITERAL:
@@ -526,36 +566,46 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "NUMBER_FLOAT";
         case TOKEN_CHAR_LITERAL:
             return "CHAR_LITERAL";
-        case TOKEN_KEYWORD_FN:
-            return "KEYWORD_FN";
-        case TOKEN_KEYWORD_VAR:
-            return "KEYWORD_VAR";
-        case TOKEN_KEYWORD_IF:
-            return "KEYWORD_IF";
-        case TOKEN_KEYWORD_ELSE:
-            return "KEYWORD_ELSE";
-        case TOKEN_KEYWORD_TRUE:
-            return "KEYWORD_TRUE";
-        case TOKEN_KEYWORD_FALSE:
-            return "KEYWORD_FALSE";
-        case TOKEN_KEYWORD_NULL:
-            return "KEYWORD_NULL";
         case TOKEN_KEYWORD_MOD:
             return "KEYWORD_MOD";
         case TOKEN_KEYWORD_USE:
             return "KEYWORD_USE";
+        case TOKEN_KEYWORD_TYPE:
+            return "KEYWORD_TYPE";
+        case TOKEN_KEYWORD_STRUCT:
+            return "KEYWORD_STRUCT";
+        case TOKEN_KEYWORD_ENUM:
+            return "KEYWORD_ENUM";
         case TOKEN_KEYWORD_INTERFACE:
             return "KEYWORD_INTERFACE";
         case TOKEN_KEYWORD_IMPL:
             return "KEYWORD_IMPL";
-        case TOKEN_KEYWORD_UNION:
-            return "KEYWORD_UNION";
-        case TOKEN_KEYWORD_EXTERN:
-            return "KEYWORD_EXTERN";
-        case TOKEN_KEYWORD_EXPORT:
-            return "KEYWORD_EXPORT";
-        case TOKEN_KEYWORD_INLINE:
-            return "KEYWORD_INLINE";
+        case TOKEN_KEYWORD_FN:
+            return "KEYWORD_FN";
+        case TOKEN_KEYWORD_CONST:
+            return "KEYWORD_CONST";
+        case TOKEN_KEYWORD_VAR:
+            return "KEYWORD_VAR";
+        case TOKEN_KEYWORD_IF:
+            return "KEYWORD_IF";
+        case TOKEN_KEYWORD_ELSE_IF:
+            return "KEYWORD_ELSE_IF";
+        case TOKEN_KEYWORD_ELSE:
+            return "KEYWORD_ELSE";
+        case TOKEN_KEYWORD_WHILE:
+            return "KEYWORD_WHILE";
+        case TOKEN_KEYWORD_FOR:
+            return "KEYWORD_FOR";
+        case TOKEN_KEYWORD_IN:
+            return "KEYWORD_IN";
+        case TOKEN_KEYWORD_MATCH:
+            return "KEYWORD_MATCH";
+        case TOKEN_KEYWORD_BREAK:
+            return "KEYWORD_BREAK";
+        case TOKEN_KEYWORD_CONTINUE:
+            return "KEYWORD_CONTINUE";
+        case TOKEN_KEYWORD_RETURN:
+            return "KEYWORD_RETURN";
         case TOKEN_KEYWORD_DEFER:
             return "KEYWORD_DEFER";
         case TOKEN_KEYWORD_COMPTIME:
@@ -566,12 +616,26 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "KEYWORD_CAPABILITY";
         case TOKEN_KEYWORD_PHANTOM_RESOURCE:
             return "KEYWORD_PHANTOM_RESOURCE";
+        case TOKEN_KEYWORD_TRUE:
+            return "KEYWORD_TRUE";
+        case TOKEN_KEYWORD_FALSE:
+            return "KEYWORD_FALSE";
+        case TOKEN_KEYWORD_NULL:
+            return "KEYWORD_NULL";
         case TOKEN_KEYWORD_USING:
             return "KEYWORD_USING";
         case TOKEN_KEYWORD_WITH_CONTEXT:
             return "KEYWORD_WITH_CONTEXT";
         case TOKEN_KEYWORD_CONTEXT:
             return "KEYWORD_CONTEXT";
+        case TOKEN_KEYWORD_EXTERN:
+            return "KEYWORD_EXTERN";
+        case TOKEN_KEYWORD_EXPORT:
+            return "KEYWORD_EXPORT";
+        case TOKEN_KEYWORD_INLINE:
+            return "KEYWORD_INLINE";
+        case TOKEN_KEYWORD_UNION:
+            return "KEYWORD_UNION";
         case TOKEN_KEYWORD_PHANTOM:
             return "KEYWORD_PHANTOM";
         case TOKEN_KEYWORD_ORELSE:
@@ -580,26 +644,6 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "KEYWORD_CATCH";
         case TOKEN_KEYWORD_TRY:
             return "KEYWORD_TRY";
-        case TOKEN_KEYWORD_RETURN:
-            return "KEYWORD_RETURN";
-        case TOKEN_KEYWORD_BREAK:
-            return "KEYWORD_BREAK";
-        case TOKEN_KEYWORD_CONTINUE:
-            return "KEYWORD_CONTINUE";
-        case TOKEN_KEYWORD_WHILE:
-            return "KEYWORD_WHILE";
-        case TOKEN_KEYWORD_FOR:
-            return "KEYWORD_FOR";
-        case TOKEN_KEYWORD_MATCH:
-            return "KEYWORD_MATCH";
-        case TOKEN_KEYWORD_TYPE:
-            return "KEYWORD_TYPE";
-        case TOKEN_KEYWORD_STRUCT:
-            return "KEYWORD_STRUCT";
-        case TOKEN_KEYWORD_ENUM:
-            return "KEYWORD_ENUM";
-        case TOKEN_KEYWORD_CONST:
-            return "KEYWORD_CONST";
         case TOKEN_COMMENT:
             return "COMMENT";
         case TOKEN_NEWLINE:
