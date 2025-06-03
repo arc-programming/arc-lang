@@ -1,0 +1,128 @@
+# Build directories
+build/
+out/
+bin/
+lib/
+dist/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# Object files
+*.o
+*.obj
+*.lo
+*.slo
+*.ko
+*.mod
+
+# Compiled executables
+*.exe
+*.out
+*.app
+arc
+arc.exe
+
+# Static and dynamic libraries
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+*.ilk
+
+# Visual Studio / Visual Studio Code
+.vs/
+.vscode/
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.sln
+*.suo
+*.user
+*.aps
+*.pch
+*.vspscc
+*_i.c
+*_p.c
+*.ncb
+*.tlb
+*.tlh
+*.bak
+*.cache
+*.ilk
+*.log
+*.tlog
+*.lastbuildstate
+
+# Clang/LLVM
+*.bc
+*.ll
+
+# Code coverage
+*.gcov
+*.gcda
+*.gcno
+coverage/
+lcov.info
+
+# Profiling
+gmon.out
+*.prof
+
+# Generated documentation
+docs/html/
+docs/latex/
+*.chm
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.#*
+#*#
+
+# OS specific
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE files
+*.cbp
+*.layout
+*.depend
+*.workspace
+.cproject
+.project
+.settings/
+
+# Test outputs
+test_results/
+*.test
+tests/output/
+
+# Package managers
+node_modules/
+vendor/
+
+# Archives
+*.tar
+*.tar.gz
+*.zip
+*.rar
+*.7z
