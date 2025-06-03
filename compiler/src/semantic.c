@@ -5,7 +5,74 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Forward declarations
 static void arc_semantic_analyzer_setup_builtins(ArcSemanticAnalyzer *analyzer);
+static bool arc_analyze_assignment_target(ArcSemanticAnalyzer *analyzer, ArcAstNode *expr);
+static bool arc_check_variable_initialization(ArcSemanticAnalyzer *analyzer, const char *var_name,
+                                              ArcSourceInfo source_info);
+static bool arc_analyze_return_type_compatibility(ArcSemanticAnalyzer *analyzer,
+                                                  ArcTypeInfo *expr_type,
+                                                  ArcSourceInfo source_info);
+static void arc_check_unreachable_code(ArcSemanticAnalyzer *analyzer, ArcAstNode *stmt);
+static bool arc_validate_function_signature(ArcSemanticAnalyzer *analyzer, ArcAstNode *func_decl);
+static void arc_check_unused_variables(ArcSemanticAnalyzer *analyzer);
+static void arc_check_unused_in_scope(ArcSemanticAnalyzer *analyzer, ArcScope *scope);
+static bool arc_type_is_assignable(ArcTypeInfo *from, ArcTypeInfo *to);
+static ArcTypeInfo *arc_infer_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNode *expr);
+
+// Enhanced type system helpers
+static const char *arc_type_to_string(ArcTypeInfo *type) {
+    if (!type)
+        return "unknown";
+
+    switch (type->kind) {
+        case ARC_TYPE_PRIMITIVE:
+            switch (type->primitive.primitive_type) {
+                case TOKEN_KEYWORD_I8:
+                    return "i8";
+                case TOKEN_KEYWORD_I16:
+                    return "i16";
+                case TOKEN_KEYWORD_I32:
+                    return "i32";
+                case TOKEN_KEYWORD_I64:
+                    return "i64";
+                case TOKEN_KEYWORD_U8:
+                    return "u8";
+                case TOKEN_KEYWORD_U16:
+                    return "u16";
+                case TOKEN_KEYWORD_U32:
+                    return "u32";
+                case TOKEN_KEYWORD_U64:
+                    return "u64";
+                case TOKEN_KEYWORD_F32:
+                    return "f32";
+                case TOKEN_KEYWORD_F64:
+                    return "f64";
+                case TOKEN_KEYWORD_BOOL:
+                    return "bool";
+                case TOKEN_KEYWORD_CHAR:
+                    return "char";
+                default:
+                    return "primitive";
+            }
+        case ARC_TYPE_POINTER:
+            return "pointer";
+        case ARC_TYPE_ARRAY:
+            return "array";
+        case ARC_TYPE_SLICE:
+            return "slice";
+        case ARC_TYPE_OPTIONAL:
+            return "optional";
+        case ARC_TYPE_FUNCTION:
+            return "function";
+        case ARC_TYPE_VOID:
+            return "void";
+        case ARC_TYPE_ERROR:
+            return "error";
+        default:
+            return "unknown";
+    }
+}
 
 // === SEMANTIC ANALYZER LIFECYCLE ===
 
@@ -654,8 +721,16 @@ static ArcTypeInfo *arc_analyze_bitwise_binary_op(ArcSemanticAnalyzer *analyzer,
 static ArcTypeInfo *arc_analyze_assignment_binary_op(ArcSemanticAnalyzer *analyzer,
                                                      ArcAstNode *expr, ArcTypeInfo *left_type,
                                                      ArcTypeInfo *right_type) {
-    // TODO: Check that left operand is an lvalue (assignable)
-    // TODO: Check type compatibility for assignment
+    // Enhanced assignment analysis with lvalue checking
+    if (!arc_analyze_assignment_target(analyzer, expr->binary_expr.left)) {
+        return NULL;
+    }  // Enhanced type compatibility checking for assignment
+    if (!arc_type_is_assignable_to(right_type, left_type)) {
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, expr->source_info,
+                           "Type mismatch in assignment: cannot assign %s to %s",
+                           arc_type_to_string(right_type), arc_type_to_string(left_type));
+        return NULL;
+    }
 
     // For compound assignments, check the operation compatibility
     if (expr->binary_expr.op_type != BINARY_OP_ASSIGN) {
@@ -682,6 +757,21 @@ static ArcTypeInfo *arc_analyze_assignment_binary_op(ArcSemanticAnalyzer *analyz
         }
     }
 
+    // Mark the assigned variable as initialized if it's an identifier
+    if (expr->binary_expr.left->type == AST_IDENTIFIER) {
+        size_t name_len = expr->binary_expr.left->identifier.token.length;
+        char *name = arc_arena_alloc(analyzer->arena, name_len + 1);
+        if (name) {
+            strncpy(name, expr->binary_expr.left->identifier.token.start, name_len);
+            name[name_len] = '\0';
+
+            ArcSymbol *symbol = arc_scope_lookup_symbol_recursive(analyzer->current_scope, name);
+            if (symbol && symbol->kind == ARC_SYMBOL_VARIABLE) {
+                symbol->is_defined = true;  // Mark as initialized
+            }
+        }
+    }
+
     return left_type;  // Assignment expression has the type of the left operand
 }
 
@@ -694,12 +784,82 @@ static ArcTypeInfo *arc_analyze_unary_op(ArcSemanticAnalyzer *analyzer, ArcAstNo
 }
 
 static ArcTypeInfo *arc_analyze_function_call(ArcSemanticAnalyzer *analyzer, ArcAstNode *expr) {
-    // TODO: Implement function call analysis
-    // 1. Resolve the function being called
-    // 2. Check argument count and types
-    // 3. Return the function's return type
-    arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_WARNING, expr->source_info,
-                       "Function call analysis not yet implemented");
+    if (!expr || expr->type != AST_EXPR_CALL) {
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, expr->source_info,
+                           "Invalid function call expression");
+        return NULL;
+    }
+
+    // Get the function identifier
+    ArcAstNode *callee = expr->call_expr.function;
+    if (!callee || callee->type != AST_IDENTIFIER) {
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, expr->source_info,
+                           "Function calls only support direct identifiers for now");
+        return NULL;
+    }
+
+    // Extract function name from token
+    ArcToken name_token = callee->identifier.token;
+    if (name_token.length == 0 || !name_token.start) {
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, expr->source_info,
+                           "Invalid function name");
+        return NULL;
+    }
+
+    char *func_name = arc_arena_alloc(analyzer->arena, name_token.length + 1);
+    if (!func_name) {
+        return NULL;
+    }
+    strncpy(func_name, name_token.start, name_token.length);
+    func_name[name_token.length] = '\0';
+
+    // Look up the function symbol
+    ArcSymbol *func_symbol = arc_scope_lookup_symbol_recursive(analyzer->current_scope, func_name);
+    if (!func_symbol) {
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, expr->source_info,
+                           "Undeclared function '%s'", func_name);
+        return NULL;
+    }
+
+    if (func_symbol->kind != ARC_SYMBOL_FUNCTION) {
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, expr->source_info,
+                           "'%s' is not a function", func_name);
+        return NULL;
+    }
+
+    // Check argument count
+    size_t provided_args = expr->call_expr.argument_count;
+    size_t expected_args = func_symbol->parameter_count;
+
+    if (provided_args != expected_args) {
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, expr->source_info,
+                           "Function '%s' expects %zu arguments, but %zu were provided", func_name,
+                           expected_args, provided_args);
+        return NULL;
+    }
+
+    // Check argument types
+    for (size_t i = 0; i < provided_args; i++) {
+        ArcTypeInfo *arg_type = arc_analyze_expression_type(analyzer, expr->call_expr.arguments[i]);
+        if (!arg_type) {
+            arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, expr->source_info,
+                               "Invalid argument %zu in function call", i + 1);
+            return NULL;
+        }
+
+        // For now, we don't have detailed parameter type info stored in function symbols
+        // This would need to be enhanced when we fully implement function types
+        // TODO: Check actual parameter types when function type system is complete
+    }
+
+    // Return the function's return type
+    // For now, we don't have proper return type tracking in symbols
+    // TODO: Implement proper return type tracking
+    if (func_symbol->type && func_symbol->type->kind == ARC_TYPE_FUNCTION) {
+        return func_symbol->type->function.return_type;
+    }
+
+    // Default to void for now
     return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_VOID);
 }
 
@@ -713,14 +873,15 @@ bool arc_semantic_analyze(ArcSemanticAnalyzer *analyzer, ArcAstNode *ast) {
         arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, ast->source_info,
                            "Expected program node at top level");
         return false;
-    }
-
-    // Analyze all declarations in the program
+    }  // Analyze all declarations in the program
     for (size_t i = 0; i < ast->program.declaration_count; i++) {
         if (!arc_analyze_declaration(analyzer, ast->program.declarations[i])) {
             // Continue analyzing other declarations even if one fails
         }
     }
+
+    // After analyzing all declarations, check for unused variables
+    arc_check_unused_variables(analyzer);
 
     return !arc_semantic_has_errors(analyzer);
 }
@@ -771,7 +932,11 @@ bool arc_analyze_declaration(ArcSemanticAnalyzer *analyzer, ArcAstNode *decl) {
 
             // TODO: Create function type from parameters and return type
             // For now, just set a placeholder type
-            symbol->type = arc_type_create(analyzer, ARC_TYPE_FUNCTION);
+            symbol->type =
+                arc_type_create(analyzer, ARC_TYPE_FUNCTION);  // Validate function signature
+            if (!arc_validate_function_signature(analyzer, decl)) {
+                return false;
+            }
 
             // Add to current scope
             if (!arc_scope_add_symbol(analyzer->current_scope, symbol)) {
@@ -874,12 +1039,17 @@ ArcTypeInfo *arc_analyze_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNo
             strncpy(name, expr->identifier.token.start, name_len);
             name[name_len] = '\0';
 
-            ArcSymbol *symbol = arc_scope_lookup_symbol_recursive(analyzer->current_scope, name);
-            if (!symbol) {
-                arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, expr->source_info,
-                                   "Undeclared identifier '%s'", name);
+            // Enhanced identifier resolution with initialization checking
+            if (!arc_check_variable_initialization(analyzer, name, expr->source_info)) {
                 return NULL;
             }
+
+            ArcSymbol *symbol = arc_scope_lookup_symbol_recursive(analyzer->current_scope, name);
+            // symbol should exist due to arc_check_variable_initialization, but double-check
+            if (!symbol) {
+                return NULL;
+            }
+
             return symbol->type;
         }
         case AST_LITERAL_STRING:
@@ -958,10 +1128,7 @@ ArcTypeInfo *arc_analyze_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNo
         }
 
         default:
-            arc_diagnostic_add(
-                analyzer, ARC_DIAGNOSTIC_WARNING, expr->source_info,
-                "Expression type analysis not yet implemented for this expression type");
-            return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_VOID);
+            return arc_infer_expression_type(analyzer, expr);
     }
 }
 
@@ -975,10 +1142,18 @@ bool arc_analyze_statement(ArcSemanticAnalyzer *analyzer, ArcAstNode *stmt) {
             ArcScope *block_scope =
                 arc_scope_create(analyzer, ARC_SCOPE_BLOCK, analyzer->current_scope);
             arc_scope_push(analyzer, block_scope);
-
             bool all_ok = true;
             // Analyze all statements in the block
             for (size_t i = 0; i < stmt->block_stmt.statement_count; i++) {
+                // Check for unreachable code after return
+                if (analyzer->has_return && i > 0) {
+                    // Check if previous statement was a return
+                    ArcAstNode *prev_stmt = stmt->block_stmt.statements[i - 1];
+                    if (prev_stmt && prev_stmt->type == AST_STMT_RETURN) {
+                        arc_check_unreachable_code(analyzer, stmt->block_stmt.statements[i]);
+                    }
+                }
+
                 if (!arc_analyze_statement(analyzer, stmt->block_stmt.statements[i])) {
                     all_ok = false;
                 }
@@ -988,7 +1163,6 @@ bool arc_analyze_statement(ArcSemanticAnalyzer *analyzer, ArcAstNode *stmt) {
             arc_scope_pop(analyzer);
             return all_ok;
         }
-
         case AST_STMT_VAR_DECL: {
             // Extract variable name from token
             size_t name_len = stmt->var_decl_stmt.name.length;
@@ -1029,7 +1203,7 @@ bool arc_analyze_statement(ArcSemanticAnalyzer *analyzer, ArcAstNode *stmt) {
                 }
             }
 
-            // Check initializer if present
+            // Enhanced initializer analysis
             if (stmt->var_decl_stmt.initializer) {
                 ArcTypeInfo *init_type =
                     arc_analyze_expression_type(analyzer, stmt->var_decl_stmt.initializer);
@@ -1039,17 +1213,35 @@ bool arc_analyze_statement(ArcSemanticAnalyzer *analyzer, ArcAstNode *stmt) {
                     return false;
                 }
 
-                // If no explicit type, infer from initializer
+                // If no explicit type, use enhanced type inference
                 if (!symbol->type) {
-                    symbol->type = init_type;
-                } else {
-                    // Check type compatibility
-                    if (!arc_type_is_assignable_to(init_type, symbol->type)) {
-                        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, stmt->source_info,
-                                           "Type mismatch in variable '%s' initialization", name);
+                    symbol->type =
+                        arc_infer_expression_type(analyzer, stmt->var_decl_stmt.initializer);
+                    if (!symbol->type) {
+                        symbol->type = init_type;  // Fallback to basic analysis
+                    }
+                } else {  // Enhanced type compatibility checking
+                    if (!arc_type_is_assignable(init_type, symbol->type)) {
+                        arc_diagnostic_add(
+                            analyzer, ARC_DIAGNOSTIC_ERROR, stmt->source_info,
+                            "Type mismatch in variable '%s' initialization: cannot assign %s to %s",
+                            name, arc_type_to_string(init_type), arc_type_to_string(symbol->type));
                         return false;
                     }
                 }
+
+                // Mark as initialized
+                symbol->is_defined = true;
+            } else {
+                // Variable declared without initializer
+                if (!symbol->type) {
+                    arc_diagnostic_add(
+                        analyzer, ARC_DIAGNOSTIC_ERROR, stmt->source_info,
+                        "Variable '%s' declared without type annotation or initializer", name);
+                    return false;
+                }
+                // Mark as uninitialized
+                symbol->is_defined = false;
             }
 
             // Variables must have a type by now
@@ -1082,9 +1274,8 @@ bool arc_analyze_statement(ArcSemanticAnalyzer *analyzer, ArcAstNode *stmt) {
                                "Const declaration analysis not yet implemented");
             return true;
         }
-
         case AST_STMT_RETURN: {
-            // TODO: Check if return type matches function return type
+            // Enhanced return statement analysis
             if (stmt->return_stmt.value) {
                 ArcTypeInfo *return_type =
                     arc_analyze_expression_type(analyzer, stmt->return_stmt.value);
@@ -1093,8 +1284,19 @@ bool arc_analyze_statement(ArcSemanticAnalyzer *analyzer, ArcAstNode *stmt) {
                                        "Invalid return expression");
                     return false;
                 }
-                // TODO: Check compatibility with function return type
+
+                // Enhanced return type compatibility checking
+                if (!arc_analyze_return_type_compatibility(analyzer, return_type,
+                                                           stmt->source_info)) {
+                    return false;
+                }
+            } else {
+                // Return without value - check if function expects void
+                if (!arc_analyze_return_type_compatibility(analyzer, NULL, stmt->source_info)) {
+                    return false;
+                }
             }
+
             analyzer->has_return = true;
             return true;
         }
@@ -1111,5 +1313,299 @@ bool arc_analyze_statement(ArcSemanticAnalyzer *analyzer, ArcAstNode *stmt) {
             arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_WARNING, stmt->source_info,
                                "Statement analysis not yet implemented for this statement type");
             return true;
+    }
+}
+
+// === ENHANCED SEMANTIC ANALYSIS FEATURES ===
+
+// Enhanced type checking utilities
+static bool arc_type_can_be_null(ArcTypeInfo *type) {
+    return type && (type->kind == ARC_TYPE_POINTER || type->kind == ARC_TYPE_OPTIONAL);
+}
+
+static bool arc_type_is_assignable(ArcTypeInfo *from, ArcTypeInfo *to) {
+    if (!from || !to)
+        return false;
+
+    // Exact type match
+    if (arc_type_is_compatible(from, to))
+        return true;
+
+    // Numeric conversions (widening)
+    if (arc_type_is_numeric(from) && arc_type_is_numeric(to)) {
+        // Allow i32 -> i64, f32 -> f64, etc.
+        if (from->kind == ARC_TYPE_PRIMITIVE && to->kind == ARC_TYPE_PRIMITIVE) {
+            // Simple widening rules
+            if (from->primitive.primitive_type == TOKEN_KEYWORD_I32 &&
+                to->primitive.primitive_type == TOKEN_KEYWORD_I64)
+                return true;
+            if (from->primitive.primitive_type == TOKEN_KEYWORD_F32 &&
+                to->primitive.primitive_type == TOKEN_KEYWORD_F64)
+                return true;
+        }
+    }
+
+    // Null can be assigned to optional or pointer types
+    if (from->kind == ARC_TYPE_VOID && arc_type_can_be_null(to))
+        return true;
+
+    return false;
+}
+
+static int arc_get_type_precedence(ArcTypeInfo *type) {
+    if (!type || type->kind != ARC_TYPE_PRIMITIVE)
+        return 0;
+
+    switch (type->primitive.primitive_type) {
+        case TOKEN_KEYWORD_BOOL:
+            return 1;
+        case TOKEN_KEYWORD_I8:
+        case TOKEN_KEYWORD_U8:
+            return 2;
+        case TOKEN_KEYWORD_I16:
+        case TOKEN_KEYWORD_U16:
+            return 3;
+        case TOKEN_KEYWORD_I32:
+        case TOKEN_KEYWORD_U32:
+            return 4;
+        case TOKEN_KEYWORD_I64:
+        case TOKEN_KEYWORD_U64:
+            return 5;
+        case TOKEN_KEYWORD_F32:
+            return 6;
+        case TOKEN_KEYWORD_F64:
+            return 7;
+        default:
+            return 0;
+    }
+}
+
+// Enhanced variable initialization tracking
+static void arc_mark_variable_used(ArcSemanticAnalyzer *analyzer, const char *name) {
+    ArcSymbol *symbol = arc_scope_lookup_symbol_recursive(analyzer->current_scope, name);
+    if (symbol && symbol->kind == ARC_SYMBOL_VARIABLE) {
+        // Mark as used (we could add a 'used' flag to ArcSymbol)
+        // For now, just note that we found the symbol
+    }
+}
+
+static bool arc_check_variable_initialization(ArcSemanticAnalyzer *analyzer, const char *var_name,
+                                              ArcSourceInfo source_info) {
+    ArcSymbol *symbol = arc_scope_lookup_symbol_recursive(analyzer->current_scope, var_name);
+    if (!symbol) {
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, source_info, "Undeclared variable '%s'",
+                           var_name);
+        return false;
+    }
+
+    if (symbol->kind == ARC_SYMBOL_VARIABLE && !symbol->is_defined) {
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, source_info,
+                           "Use of uninitialized variable '%s'", var_name);
+        return false;
+    }
+
+    arc_mark_variable_used(analyzer, var_name);
+    return true;
+}
+
+// Enhanced assignment analysis
+static bool arc_analyze_assignment_target(ArcSemanticAnalyzer *analyzer, ArcAstNode *expr) {
+    if (!expr)
+        return false;
+
+    switch (expr->type) {
+        case AST_IDENTIFIER: {
+            // Extract identifier name
+            size_t name_len = expr->identifier.token.length;
+            char *name = arc_arena_alloc(analyzer->arena, name_len + 1);
+            if (!name)
+                return false;
+            strncpy(name, expr->identifier.token.start, name_len);
+            name[name_len] = '\0';
+
+            ArcSymbol *symbol = arc_scope_lookup_symbol_recursive(analyzer->current_scope, name);
+            if (!symbol) {
+                arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, expr->source_info,
+                                   "Cannot assign to undeclared variable '%s'", name);
+                return false;
+            }
+
+            if (!symbol->is_mutable) {
+                arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, expr->source_info,
+                                   "Cannot assign to immutable variable '%s'", name);
+                return false;
+            }
+
+            return true;
+        }
+
+        case AST_EXPR_FIELD_ACCESS:
+            // TODO: Implement field access assignment analysis
+            return true;
+
+        case AST_EXPR_INDEX:
+            // TODO: Implement array index assignment analysis
+            return true;
+
+        default:
+            arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, expr->source_info,
+                               "Invalid assignment target");
+            return false;
+    }
+}
+
+// Enhanced function analysis
+static bool arc_validate_function_signature(ArcSemanticAnalyzer *analyzer, ArcAstNode *func_decl) {
+    if (!func_decl || func_decl->type != AST_DECL_FUNCTION)
+        return false;
+
+    // Check for parameter name conflicts
+    for (size_t i = 0; i < func_decl->function_decl.parameter_count; i++) {
+        for (size_t j = i + 1; j < func_decl->function_decl.parameter_count; j++) {
+            ArcAstNode *param1 = func_decl->function_decl.parameters[i];
+            ArcAstNode *param2 = func_decl->function_decl.parameters[j];
+
+            if (param1 && param2 &&
+                param1->parameter.name.length == param2->parameter.name.length &&
+                strncmp(param1->parameter.name.start, param2->parameter.name.start,
+                        param1->parameter.name.length) == 0) {
+                arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, param2->source_info,
+                                   "Duplicate parameter name");
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+static bool arc_analyze_return_type_compatibility(ArcSemanticAnalyzer *analyzer,
+                                                  ArcTypeInfo *expr_type,
+                                                  ArcSourceInfo source_info) {
+    if (!analyzer->current_function) {
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, source_info,
+                           "Return statement outside of function");
+        return false;
+    }
+
+    // Get expected return type from current function
+    ArcTypeInfo *expected_type =
+        analyzer->current_function->type;  // This would need to be properly set
+
+    if (!expected_type) {
+        // Void function - no return value expected
+        if (expr_type && expr_type->kind != ARC_TYPE_VOID) {
+            arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_WARNING, source_info,
+                               "Return value in void function will be ignored");
+        }
+        return true;
+    }
+
+    if (!expr_type) {
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, source_info,
+                           "Function expects return value but none provided");
+        return false;
+    }
+
+    if (!arc_type_is_assignable(expr_type, expected_type)) {
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, source_info, "Return type mismatch");
+        return false;
+    }
+
+    return true;
+}
+
+// Enhanced control flow analysis
+static void arc_check_unreachable_code(ArcSemanticAnalyzer *analyzer, ArcAstNode *stmt) {
+    if (!stmt || !analyzer->has_return)
+        return;
+
+    arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_WARNING, stmt->source_info,
+                       "Unreachable code after return statement");
+}
+
+// Enhanced expression analysis with better type inference
+static ArcTypeInfo *arc_infer_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNode *expr) {
+    if (!expr)
+        return NULL;
+
+    switch (expr->type) {
+        case AST_LITERAL_INT: {
+            // Try to infer the best integer type based on value
+            // For now, default to i32
+            return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_I32);
+        }
+
+        case AST_LITERAL_FLOAT: {
+            // Try to infer f32 vs f64 based on precision needed
+            // For now, default to f64
+            return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_F64);
+        }
+
+        case AST_EXPR_BINARY: {
+            ArcTypeInfo *left_type = arc_analyze_expression_type(analyzer, expr->binary_expr.left);
+            ArcTypeInfo *right_type =
+                arc_analyze_expression_type(analyzer, expr->binary_expr.right);
+
+            if (!left_type || !right_type)
+                return NULL;
+
+            // Enhanced binary operation type inference
+            switch (expr->binary_expr.op_type) {
+                case BINARY_OP_ADD:
+                case BINARY_OP_SUB:
+                case BINARY_OP_MUL:
+                case BINARY_OP_DIV: {
+                    // Choose the type with higher precedence
+                    int left_prec = arc_get_type_precedence(left_type);
+                    int right_prec = arc_get_type_precedence(right_type);
+                    return (left_prec >= right_prec) ? left_type : right_type;
+                }
+
+                case BINARY_OP_EQ:
+                case BINARY_OP_NE:
+                case BINARY_OP_LT:
+                case BINARY_OP_LE:
+                case BINARY_OP_GT:
+                case BINARY_OP_GE:
+                    return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_BOOL);
+
+                default:
+                    return left_type;
+            }
+        }
+
+        default:
+            return arc_analyze_expression_type(analyzer, expr);
+    }
+}
+
+// Check for unused variables in all scopes
+static void arc_check_unused_variables(ArcSemanticAnalyzer *analyzer) {
+    if (!analyzer || !analyzer->global_scope)
+        return;
+
+    // For now, just check global scope symbols as we don't have child scope tracking yet
+    // TODO: Implement proper scope traversal when child scope tracking is added
+    arc_check_unused_in_scope(analyzer, analyzer->global_scope);
+}
+
+// Helper to check unused variables in a scope
+static void arc_check_unused_in_scope(ArcSemanticAnalyzer *analyzer, ArcScope *scope) {
+    if (!scope)
+        return;
+
+    // Check each symbol in this scope
+    for (size_t i = 0; i < scope->symbol_count; i++) {
+        ArcSymbol *symbol = scope->symbols[i];
+        if (symbol && symbol->kind == ARC_SYMBOL_VARIABLE) {
+            // For now, we'll add a basic check - in a full implementation,
+            // we'd need to track variable usage throughout analysis
+            // TODO: Add is_used field to ArcSymbol and track usage during analysis
+
+            // Skip check for now since we don't have usage tracking implemented
+            // This would warn about all variables which isn't useful yet
+            (void)symbol;  // Suppress unused variable warning
+        }
     }
 }
