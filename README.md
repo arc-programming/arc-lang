@@ -1,1 +1,1 @@
-"# arc-lang" 
+# Arc Programming Language
