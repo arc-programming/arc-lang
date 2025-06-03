@@ -4,6 +4,63 @@ out/
 bin/
 lib/
 dist/
+_deps/
+
+// ALL POSSIBLE CMAKE GENERATED files
+# CMake configuration and build files
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+DartConfiguration.tcl
+compile_commands.json
+
+# CMake generated makefiles and project files
+*.make
+*.cbp
+*.ninja
+.ninja_deps
+.ninja_log
+build.ninja
+rules.ninja
+
+# CMake packaging
+_CPack_Packages/
+CPackConfig.cmake
+CPackSourceConfig.cmake
+*.deb
+*.rpm
+*.tar.gz
+*.zip
+
+# CMake testing
+Testing/Temporary/
+CTestCostData.txt
+LastTest.log
+
+# CMake install files
+cmake_uninstall.cmake
+CTestCustom.cmake
+
+# CMake generated headers
+*Config.h
+*config.h
+version.h
+
+# CMake module files
+Find*.cmake
+*-config.cmake
+*Config.cmake
+*ConfigVersion.cmake
+*Targets.cmake
+*Targets-*.cmake
+
+# CMake export files
+*Export*.cmake
 
 # CMake generated files
 CMakeCache.txt
