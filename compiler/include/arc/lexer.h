@@ -33,8 +33,8 @@ typedef enum {
     TOKEN_PIPE,
     TOKEN_PIPE_PIPE,  // | || (for pipeline and logical OR)
     TOKEN_AMPERSAND,
-    TOKEN_AMPERSAND_AMPERSAND,  // & && (bitwise and logical AND)    TOKEN_CARET,               // ^
-                                // (bitwise XOR, or pointer type)
+    TOKEN_AMPERSAND_AMPERSAND,  // & && (bitwise and logical AND)
+    TOKEN_CARET,                // ^ (bitwise XOR, or pointer type)
     TOKEN_QUESTION,             // ? (optional types/pointers)
     TOKEN_COLON,                // :
     TOKEN_ARROW,                // -> (function return, pipeline)

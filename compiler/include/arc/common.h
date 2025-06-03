@@ -126,9 +126,17 @@ char *arc_get_dirname(const char *path);
     fprintf(stderr, "[DEBUG] %s:%d: " fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__)
 #define ARC_TRACE(fmt, ...)                                                                        \
     fprintf(stderr, "[TRACE] %s:%d in %s(): " fmt "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__)
+#define ARC_ASSERT(condition, message)                                                             \
+    do {                                                                                           \
+        if (!(condition)) {                                                                        \
+            fprintf(stderr, "[ASSERT] %s:%d: %s\n", __FILE__, __LINE__, message);                  \
+            abort();                                                                               \
+        }                                                                                          \
+    } while (0)
 #else
 #define ARC_DEBUG(fmt, ...)
 #define ARC_TRACE(fmt, ...)
+#define ARC_ASSERT(condition, message) assert(condition)
 #endif
 
 // Useful macros

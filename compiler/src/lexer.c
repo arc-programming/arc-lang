@@ -1,0 +1,519 @@
+#include "arc/lexer.h"
+#include <ctype.h>
+#include <string.h>
+
+// Forward declarations
+static ArcTokenType check_keyword(const char *start, size_t length);
+
+// ----- internal helper functions -----
+static bool is_at_end(const ArcLexer *lexer) {
+    return lexer->current_char >= lexer->source_end || *lexer->current_char == '\0';
+}
+
+static char advance(ArcLexer *lexer) {
+    if (is_at_end(lexer))
+        return '\0';
+
+    char current_c = *lexer->current_char;
+    lexer->current_char++;
+
+    if (current_c == '\n') {
+        lexer->current_line++;
+        lexer->current_line_start = lexer->current_char;
+    }
+
+    return current_c;
+}
+
+static char peek(const ArcLexer *lexer) {
+    if (is_at_end(lexer)) {
+        return '\0';
+    }
+
+    return *lexer->current_char;
+}
+
+static char peek_next(const ArcLexer *lexer) {
+    if (is_at_end(lexer) || (lexer->current_char + 1) >= lexer->source_end) {
+        return '\0';
+    }
+    return *(lexer->current_char + 1);
+}
+
+static ArcToken make_token(ArcLexer *lexer, ArcTokenType type, const char *start_of_lexeme,
+                           ArcSourceLocation start_loc) {
+    ArcToken token;
+    token.type = type;
+    token.loc = start_loc;  // Use the pre-calculated start location
+    token.start = start_of_lexeme;
+    token.length = (size_t)(lexer->current_char - start_of_lexeme);
+
+    // Initialize the value union to a known state (e.g., zero)
+    // This is good practice, especially if not all token types use the union.
+    memset(&token.value, 0, sizeof(token.value));
+
+    return token;
+}
+
+// You might also want a specific error token helper
+static ArcToken make_error_token(
+    ArcLexer *lexer, const char *error_lexeme_start, ArcSourceLocation error_loc,
+    const char *error_message_for_reporting) {  // Report the error using your common.h function
+    arc_report_error(&error_loc, "%s",
+                     error_message_for_reporting);  // Or your preferred error reporting
+
+    ArcToken token;
+    token.type = TOKEN_ERROR;
+    token.loc = error_loc;
+    token.start = error_lexeme_start;
+    // Length could be 1 for a single bad char, or more if it's a sequence
+    token.length = (lexer->current_char > error_lexeme_start)
+                       ? (size_t)(lexer->current_char - error_lexeme_start)
+                       : 1;
+    if (token.length == 0 && !is_at_end(lexer))
+        token.length = 1;  // Ensure error token has some span if not EOF
+
+    memset(&token.value, 0, sizeof(token.value));
+    return token;
+}
+
+void arc_lexer_init(ArcLexer *lexer, const char *source_code, const char *filename) {
+    ARC_ASSERT(lexer != NULL, "Lexer pointer cannot be NULL.");
+    ARC_ASSERT(source_code != NULL, "Source code cannot be NULL.");
+
+    lexer->filename = filename;  // Can be NULL
+    lexer->source_start = source_code;
+    lexer->current_char = source_code;
+    lexer->source_end = source_code + strlen(source_code);  // Points one char *past* the end
+
+    lexer->current_line = 1;
+    lexer->current_line_start = source_code;  // Start of the first line is start of source
+}
+
+// Helper to skip whitespace (but preserve newlines for some use cases)
+static void skip_whitespace(ArcLexer *lexer) {
+    while (!is_at_end(lexer)) {
+        char c = peek(lexer);
+        if (c == ' ' || c == '\r' || c == '\t') {
+            advance(lexer);
+        } else {
+            break;
+        }
+    }
+}
+
+// Helper to calculate current source location
+static ArcSourceLocation get_current_location(const ArcLexer *lexer) {
+    ArcSourceLocation loc;
+    loc.filename = lexer->filename;
+    loc.line = lexer->current_line;
+    loc.column = (size_t)(lexer->current_char - lexer->current_line_start) + 1;
+    loc.offset = (size_t)(lexer->current_char - lexer->source_start);
+    return loc;
+}
+
+// Main lexer function
+ArcToken arc_lexer_next_token(ArcLexer *lexer) {
+    ARC_ASSERT(lexer != NULL, "Lexer cannot be NULL");
+
+    // Skip whitespace
+    skip_whitespace(lexer);
+
+    // Check for end of file
+    if (is_at_end(lexer)) {
+        ArcSourceLocation loc = get_current_location(lexer);
+        return make_token(lexer, TOKEN_EOF, lexer->current_char, loc);
+    }
+
+    // Record start position for this token
+    const char *token_start = lexer->current_char;
+    ArcSourceLocation token_loc = get_current_location(lexer);
+
+    char c = advance(lexer);
+
+    // Handle single-character tokens
+    switch (c) {
+        case '(':
+            return make_token(lexer, TOKEN_LPAREN, token_start, token_loc);
+        case ')':
+            return make_token(lexer, TOKEN_RPAREN, token_start, token_loc);
+        case '{':
+            return make_token(lexer, TOKEN_LBRACE, token_start, token_loc);
+        case '}':
+            return make_token(lexer, TOKEN_RBRACE, token_start, token_loc);
+        case '[':
+            return make_token(lexer, TOKEN_LBRACKET, token_start, token_loc);
+        case ']':
+            return make_token(lexer, TOKEN_RBRACKET, token_start, token_loc);
+        case ',':
+            return make_token(lexer, TOKEN_COMMA, token_start, token_loc);
+        case ';':
+            return make_token(lexer, TOKEN_SEMICOLON, token_start, token_loc);
+        case '*':
+            return make_token(lexer, TOKEN_ASTERISK, token_start, token_loc);
+        case '%':
+            return make_token(lexer, TOKEN_PERCENT, token_start, token_loc);
+        case '?':
+            return make_token(lexer, TOKEN_QUESTION, token_start, token_loc);
+        case ':':
+            return make_token(lexer, TOKEN_COLON, token_start, token_loc);
+        case '@':
+            return make_token(lexer, TOKEN_AT, token_start, token_loc);
+        case '#':
+            return make_token(lexer, TOKEN_HASH, token_start, token_loc);
+        case '~':
+            return make_token(lexer, TOKEN_TILDE, token_start, token_loc);
+        case '\n':
+            return make_token(lexer, TOKEN_NEWLINE, token_start, token_loc);
+
+        // Handle two-character tokens and single-character alternatives
+        case '!':
+            if (peek(lexer) == '=') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_BANG_EQUAL, token_start, token_loc);
+            }
+            return make_token(lexer, TOKEN_BANG, token_start, token_loc);
+
+        case '=':
+            if (peek(lexer) == '=') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_EQUAL_EQUAL, token_start, token_loc);
+            }
+            return make_token(lexer, TOKEN_EQUAL, token_start, token_loc);
+
+        case '<':
+            if (peek(lexer) == '=') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_LESS_EQUAL, token_start, token_loc);
+            } else if (peek(lexer) == '<') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_LEFT_SHIFT, token_start, token_loc);
+            }
+            return make_token(lexer, TOKEN_LESS, token_start, token_loc);
+
+        case '>':
+            if (peek(lexer) == '=') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_GREATER_EQUAL, token_start, token_loc);
+            } else if (peek(lexer) == '>') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_RIGHT_SHIFT, token_start, token_loc);
+            }
+            return make_token(lexer, TOKEN_GREATER, token_start, token_loc);
+
+        case '+':
+            if (peek(lexer) == '=') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_PLUS_EQUAL, token_start, token_loc);
+            }
+            return make_token(lexer, TOKEN_PLUS, token_start, token_loc);
+
+        case '-':
+            if (peek(lexer) == '=') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_MINUS_EQUAL, token_start, token_loc);
+            } else if (peek(lexer) == '>') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_ARROW, token_start, token_loc);
+            }
+            return make_token(lexer, TOKEN_MINUS, token_start, token_loc);
+
+        case '.':
+            if (peek(lexer) == '.') {
+                advance(lexer);
+                if (peek(lexer) == '.') {
+                    advance(lexer);
+                    return make_token(lexer, TOKEN_DOT_DOT_DOT, token_start, token_loc);
+                }
+                return make_token(lexer, TOKEN_DOT_DOT, token_start, token_loc);
+            }
+            return make_token(lexer, TOKEN_DOT, token_start, token_loc);
+
+        case '/':
+            if (peek(lexer) == '=') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_SLASH_EQUAL, token_start, token_loc);
+            } else if (peek(lexer) == '/') {
+                // Line comment - skip to end of line
+                advance(lexer);  // Skip second '/'
+                while (peek(lexer) != '\n' && !is_at_end(lexer)) {
+                    advance(lexer);
+                }
+                return make_token(lexer, TOKEN_COMMENT, token_start, token_loc);
+            } else if (peek(lexer) == '*') {
+                // Block comment - skip to */
+                advance(lexer);  // Skip '*'
+                while (!is_at_end(lexer)) {
+                    if (peek(lexer) == '*' && peek_next(lexer) == '/') {
+                        advance(lexer);  // Skip '*'
+                        advance(lexer);  // Skip '/'
+                        break;
+                    }
+                    advance(lexer);
+                }
+                return make_token(lexer, TOKEN_COMMENT, token_start, token_loc);
+            }
+            return make_token(lexer, TOKEN_SLASH, token_start, token_loc);
+
+        case '|':
+            if (peek(lexer) == '|') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_PIPE_PIPE, token_start, token_loc);
+            } else if (peek(lexer) == '>') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_PIPELINE, token_start, token_loc);
+            } else if (peek(lexer) == '=') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_PIPE_EQUAL, token_start, token_loc);
+            }
+            return make_token(lexer, TOKEN_PIPE, token_start, token_loc);
+
+        case '&':
+            if (peek(lexer) == '&') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_AMPERSAND_AMPERSAND, token_start, token_loc);
+            } else if (peek(lexer) == '=') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_AMPERSAND_EQUAL, token_start, token_loc);
+            }
+            return make_token(lexer, TOKEN_AMPERSAND, token_start, token_loc);
+
+        case '^':
+            if (peek(lexer) == '=') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_CARET_EQUAL, token_start, token_loc);
+            }
+            return make_token(lexer, TOKEN_CARET, token_start, token_loc);
+    }
+
+    // Handle identifiers and keywords
+    if (isalpha(c) || c == '_') {
+        while (isalnum(peek(lexer)) || peek(lexer) == '_') {
+            advance(lexer);
+        }
+
+        // Check if it's a keyword
+        size_t length = (size_t)(lexer->current_char - token_start);
+        ArcTokenType keyword_type = check_keyword(token_start, length);
+        if (keyword_type != TOKEN_IDENTIFIER) {
+            return make_token(lexer, keyword_type, token_start, token_loc);
+        }
+
+        return make_token(lexer, TOKEN_IDENTIFIER, token_start, token_loc);
+    }
+
+    // Handle numbers
+    if (isdigit(c)) {
+        while (isdigit(peek(lexer))) {
+            advance(lexer);
+        }
+
+        // Check for decimal point
+        if (peek(lexer) == '.' && isdigit(peek_next(lexer))) {
+            advance(lexer);  // Skip '.'
+            while (isdigit(peek(lexer))) {
+                advance(lexer);
+            }
+            return make_token(lexer, TOKEN_NUMBER_FLOAT, token_start, token_loc);
+        }
+
+        return make_token(lexer, TOKEN_NUMBER_INT, token_start, token_loc);
+    }
+
+    // Handle string literals
+    if (c == '"') {
+        while (peek(lexer) != '"' && !is_at_end(lexer)) {
+            if (peek(lexer) == '\n')
+                lexer->current_line++;
+            advance(lexer);
+        }
+
+        if (is_at_end(lexer)) {
+            return make_error_token(lexer, token_start, token_loc, "Unterminated string literal");
+        }
+
+        advance(lexer);  // Skip closing '"'
+        return make_token(lexer, TOKEN_STRING_LITERAL, token_start, token_loc);
+    }
+
+    // Handle character literals
+    if (c == '\'') {
+        if (peek(lexer) == '\\') {
+            advance(lexer);  // Skip escape character
+        }
+        advance(lexer);  // Skip character
+
+        if (peek(lexer) != '\'') {
+            return make_error_token(lexer, token_start, token_loc,
+                                    "Unterminated character literal");
+        }
+
+        advance(lexer);  // Skip closing '\''
+        return make_token(lexer, TOKEN_CHAR_LITERAL, token_start, token_loc);
+    }
+
+    // Unknown character
+    return make_error_token(lexer, token_start, token_loc, "Unexpected character");
+}
+
+// Helper function to check if an identifier is a keyword
+static ArcTokenType check_keyword(const char *start, size_t length) {
+    // Simple keyword lookup - you can optimize this later with a hash table
+    struct {
+        const char *keyword;
+        ArcTokenType type;
+    } keywords[] = {{"mod", TOKEN_KEYWORD_MOD},
+                    {"use", TOKEN_KEYWORD_USE},
+                    {"type", TOKEN_KEYWORD_TYPE},
+                    {"struct", TOKEN_KEYWORD_STRUCT},
+                    {"enum", TOKEN_KEYWORD_ENUM},
+                    {"interface", TOKEN_KEYWORD_INTERFACE},
+                    {"impl", TOKEN_KEYWORD_IMPL},
+                    {"fn", TOKEN_KEYWORD_FN},
+                    {"const", TOKEN_KEYWORD_CONST},
+                    {"var", TOKEN_KEYWORD_VAR},
+                    {"if", TOKEN_KEYWORD_IF},
+                    {"else_if", TOKEN_KEYWORD_ELSE_IF},
+                    {"else", TOKEN_KEYWORD_ELSE},
+                    {"while", TOKEN_KEYWORD_WHILE},
+                    {"for", TOKEN_KEYWORD_FOR},
+                    {"in", TOKEN_KEYWORD_IN},
+                    {"match", TOKEN_KEYWORD_MATCH},
+                    {"break", TOKEN_KEYWORD_BREAK},
+                    {"continue", TOKEN_KEYWORD_CONTINUE},
+                    {"return", TOKEN_KEYWORD_RETURN},
+                    {"defer", TOKEN_KEYWORD_DEFER},
+                    {"comptime", TOKEN_KEYWORD_COMPTIME},
+                    {"stream", TOKEN_KEYWORD_STREAM},
+                    {"capability", TOKEN_KEYWORD_CAPABILITY},
+                    {"phantom_resource", TOKEN_KEYWORD_PHANTOM_RESOURCE},
+                    {"true", TOKEN_KEYWORD_TRUE},
+                    {"false", TOKEN_KEYWORD_FALSE},
+                    {"null", TOKEN_KEYWORD_NULL},
+                    {"using", TOKEN_KEYWORD_USING},
+                    {"with_context", TOKEN_KEYWORD_WITH_CONTEXT},
+                    {"context", TOKEN_KEYWORD_CONTEXT},
+                    {"extern", TOKEN_KEYWORD_EXTERN},
+                    {"export", TOKEN_KEYWORD_EXPORT},
+                    {"inline", TOKEN_KEYWORD_INLINE},
+                    {"union", TOKEN_KEYWORD_UNION},
+                    {"phantom", TOKEN_KEYWORD_PHANTOM},
+                    {"orelse", TOKEN_KEYWORD_ORELSE},
+                    {"catch", TOKEN_KEYWORD_CATCH},
+                    {"try", TOKEN_KEYWORD_TRY}};
+
+    for (size_t i = 0; i < sizeof(keywords) / sizeof(keywords[0]); i++) {
+        if (strlen(keywords[i].keyword) == length &&
+            strncmp(start, keywords[i].keyword, length) == 0) {
+            return keywords[i].type;
+        }
+    }
+
+    return TOKEN_IDENTIFIER;
+}
+
+// Convert token type to string for debugging
+const char *arc_token_type_to_string(ArcTokenType type) {
+    switch (type) {
+        case TOKEN_LPAREN:
+            return "LPAREN";
+        case TOKEN_RPAREN:
+            return "RPAREN";
+        case TOKEN_LBRACE:
+            return "LBRACE";
+        case TOKEN_RBRACE:
+            return "RBRACE";
+        case TOKEN_LBRACKET:
+            return "LBRACKET";
+        case TOKEN_RBRACKET:
+            return "RBRACKET";
+        case TOKEN_COMMA:
+            return "COMMA";
+        case TOKEN_DOT:
+            return "DOT";
+        case TOKEN_MINUS:
+            return "MINUS";
+        case TOKEN_PLUS:
+            return "PLUS";
+        case TOKEN_SEMICOLON:
+            return "SEMICOLON";
+        case TOKEN_SLASH:
+            return "SLASH";
+        case TOKEN_ASTERISK:
+            return "ASTERISK";
+        case TOKEN_PERCENT:
+            return "PERCENT";
+        case TOKEN_CARET:
+            return "CARET";
+        case TOKEN_BANG:
+            return "BANG";
+        case TOKEN_BANG_EQUAL:
+            return "BANG_EQUAL";
+        case TOKEN_EQUAL:
+            return "EQUAL";
+        case TOKEN_EQUAL_EQUAL:
+            return "EQUAL_EQUAL";
+        case TOKEN_GREATER:
+            return "GREATER";
+        case TOKEN_GREATER_EQUAL:
+            return "GREATER_EQUAL";
+        case TOKEN_LESS:
+            return "LESS";
+        case TOKEN_LESS_EQUAL:
+            return "LESS_EQUAL";
+        case TOKEN_IDENTIFIER:
+            return "IDENTIFIER";
+        case TOKEN_STRING_LITERAL:
+            return "STRING_LITERAL";
+        case TOKEN_NUMBER_INT:
+            return "NUMBER_INT";
+        case TOKEN_NUMBER_FLOAT:
+            return "NUMBER_FLOAT";
+        case TOKEN_CHAR_LITERAL:
+            return "CHAR_LITERAL";
+        case TOKEN_KEYWORD_FN:
+            return "KEYWORD_FN";
+        case TOKEN_KEYWORD_VAR:
+            return "KEYWORD_VAR";
+        case TOKEN_KEYWORD_IF:
+            return "KEYWORD_IF";
+        case TOKEN_KEYWORD_ELSE:
+            return "KEYWORD_ELSE";
+        case TOKEN_KEYWORD_TRUE:
+            return "KEYWORD_TRUE";
+        case TOKEN_KEYWORD_FALSE:
+            return "KEYWORD_FALSE";
+        case TOKEN_KEYWORD_NULL:
+            return "KEYWORD_NULL";
+        case TOKEN_KEYWORD_RETURN:
+            return "KEYWORD_RETURN";
+        case TOKEN_KEYWORD_BREAK:
+            return "KEYWORD_BREAK";
+        case TOKEN_KEYWORD_CONTINUE:
+            return "KEYWORD_CONTINUE";
+        case TOKEN_KEYWORD_WHILE:
+            return "KEYWORD_WHILE";
+        case TOKEN_KEYWORD_FOR:
+            return "KEYWORD_FOR";
+        case TOKEN_KEYWORD_MATCH:
+            return "KEYWORD_MATCH";
+        case TOKEN_KEYWORD_TYPE:
+            return "KEYWORD_TYPE";
+        case TOKEN_KEYWORD_STRUCT:
+            return "KEYWORD_STRUCT";
+        case TOKEN_KEYWORD_ENUM:
+            return "KEYWORD_ENUM";
+        case TOKEN_KEYWORD_CONST:
+            return "KEYWORD_CONST";
+        case TOKEN_COMMENT:
+            return "COMMENT";
+        case TOKEN_NEWLINE:
+            return "NEWLINE";
+        case TOKEN_ERROR:
+            return "ERROR";
+        case TOKEN_EOF:
+            return "EOF";
+        default:
+            return "UNKNOWN";
+    }
+}
