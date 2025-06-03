@@ -46,18 +46,18 @@ typedef enum
     TOKEN_AT,                  // @ (attribute marker)
     TOKEN_HASH,                // # (hash/pound)
     TOKEN_TILDE,               // ~ (bitwise NOT)
-    
+
     // Compound assignment operators
-    TOKEN_PLUS_EQUAL,          // +=
-    TOKEN_MINUS_EQUAL,         // -=
-    TOKEN_ASTERISK_EQUAL,      // *=
-    TOKEN_SLASH_EQUAL,         // /=
-    TOKEN_PERCENT_EQUAL,       // %=
-    TOKEN_AMPERSAND_EQUAL,     // &=
-    TOKEN_PIPE_EQUAL,          // |=
-    TOKEN_CARET_EQUAL,         // ^=
-    TOKEN_LEFT_SHIFT_EQUAL,    // <<=
-    TOKEN_RIGHT_SHIFT_EQUAL,   // >>>
+    TOKEN_PLUS_EQUAL,        // +=
+    TOKEN_MINUS_EQUAL,       // -=
+    TOKEN_ASTERISK_EQUAL,    // *=
+    TOKEN_SLASH_EQUAL,       // /=
+    TOKEN_PERCENT_EQUAL,     // %=
+    TOKEN_AMPERSAND_EQUAL,   // &=
+    TOKEN_PIPE_EQUAL,        // |=
+    TOKEN_CARET_EQUAL,       // ^=
+    TOKEN_LEFT_SHIFT_EQUAL,  // <<=
+    TOKEN_RIGHT_SHIFT_EQUAL, // >>>
 
     // Literals
     TOKEN_IDENTIFIER,
@@ -94,7 +94,8 @@ typedef enum
     TOKEN_KEYWORD_PHANTOM_RESOURCE,
     TOKEN_KEYWORD_TRUE,
     TOKEN_KEYWORD_FALSE,
-    TOKEN_KEYWORD_NULL,    TOKEN_KEYWORD_USING,
+    TOKEN_KEYWORD_NULL,
+    TOKEN_KEYWORD_USING,
     TOKEN_KEYWORD_WITH_CONTEXT, // For context injection
     TOKEN_KEYWORD_CONTEXT,      // For context definitions
     TOKEN_KEYWORD_EXTERN,       // For C FFI
