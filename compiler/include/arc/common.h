@@ -77,6 +77,8 @@ char *arc_strdup(const char *str);
 char *arc_strndup(const char *str, size_t n);
 bool arc_str_starts_with(const char *str, const char *prefix);
 bool arc_str_ends_with(const char *str, const char *suffix);
+char *arc_string_format(const char *format, ...);
+char *arc_string_vformat(const char *format, va_list args);
 
 // Dynamic array (vector) structure - useful for tokens, AST nodes, etc.
 typedef struct {

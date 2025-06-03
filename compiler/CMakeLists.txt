@@ -8,6 +8,7 @@ set(COMPILER_EXECUTABLE_NAME arc)
 set(COMPILER_LIB_SOURCES
     src/common.c
     src/lexer.c
+    src/parser.c
     # src/lexer/token.c
     # src/utils/memory.c
     # ... add more .c files here as you create them (but NOT main.c)

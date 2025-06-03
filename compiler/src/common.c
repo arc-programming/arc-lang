@@ -136,11 +136,40 @@ bool arc_str_ends_with(const char *str, const char *suffix) {
 
     size_t str_len = strlen(str);
     size_t suffix_len = strlen(suffix);
-
     if (suffix_len > str_len)
         return false;
 
     return strcmp(str + str_len - suffix_len, suffix) == 0;
+}
+
+char *arc_string_format(const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    char *result = arc_string_vformat(format, args);
+    va_end(args);
+    return result;
+}
+
+char *arc_string_vformat(const char *format, va_list args) {
+    if (!format)
+        return NULL;
+
+    // First, determine the size needed
+    va_list args_copy;
+    va_copy(args_copy, args);
+    int needed = vsnprintf(NULL, 0, format, args_copy);
+    va_end(args_copy);
+
+    if (needed < 0)
+        return NULL;
+
+    // Allocate buffer and format the string
+    char *buffer = MALLOC(needed + 1);
+    if (!buffer)
+        return NULL;
+
+    vsnprintf(buffer, needed + 1, format, args);
+    return buffer;
 }
 
 // Dynamic array (vector) implementation
