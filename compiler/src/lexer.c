@@ -243,14 +243,22 @@ ArcToken arc_lexer_next_token(ArcLexer *lexer) {
             } else if (peek(lexer) == '*') {
                 // Block comment - skip to */
                 advance(lexer);  // Skip '*'
+                bool found_end = false;
                 while (!is_at_end(lexer)) {
                     if (peek(lexer) == '*' && peek_next(lexer) == '/') {
                         advance(lexer);  // Skip '*'
                         advance(lexer);  // Skip '/'
+                        found_end = true;
                         break;
                     }
                     advance(lexer);
                 }
+
+                if (!found_end) {
+                    return make_error_token(lexer, token_start, token_loc,
+                                            "Unterminated block comment");
+                }
+
                 return make_token(lexer, TOKEN_COMMENT, token_start, token_loc);
             }
             return make_token(lexer, TOKEN_SLASH, token_start, token_loc);
