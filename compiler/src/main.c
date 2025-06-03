@@ -102,11 +102,6 @@ int main(int argc, char *argv[]) {
         printf(" (line %zu)", token.loc.line);
         printf("\n");
 
-        if (token_count > 200) {  // Prevent infinite output
-            printf("... (truncated after 200 tokens)\n");
-            break;
-        }
-
     } while (token.type != TOKEN_EOF && token.type != TOKEN_ERROR);
 
     if (token.type == TOKEN_ERROR) {

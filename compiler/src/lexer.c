@@ -338,10 +338,35 @@ ArcToken arc_lexer_next_token(ArcLexer *lexer) {
 
     // Handle character literals
     if (c == '\'') {
+        // Handle character content
         if (peek(lexer) == '\\') {
-            advance(lexer);  // Skip escape character
+            advance(lexer);  // Skip backslash
+            char escaped_char = peek(lexer);
+            advance(lexer);  // Skip the escaped character
+
+            // Handle special unicode escape sequences
+            if (escaped_char == 'u') {
+                if (peek(lexer) == '{') {
+                    advance(lexer);  // Skip opening brace
+                    // Skip hex digits until closing brace
+                    while (peek(lexer) != '}' && !is_at_end(lexer)) {
+                        if (!isxdigit(peek(lexer))) {
+                            return make_error_token(lexer, token_start, token_loc,
+                                                    "Invalid unicode escape sequence");
+                        }
+                        advance(lexer);
+                    }
+                    if (peek(lexer) != '}') {
+                        return make_error_token(lexer, token_start, token_loc,
+                                                "Unterminated unicode escape sequence");
+                    }
+                    advance(lexer);  // Skip closing brace
+                }
+            }
+        } else {
+            // Regular character
+            advance(lexer);
         }
-        advance(lexer);  // Skip character
 
         if (peek(lexer) != '\'') {
             return make_error_token(lexer, token_start, token_loc,
@@ -487,6 +512,46 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "KEYWORD_FALSE";
         case TOKEN_KEYWORD_NULL:
             return "KEYWORD_NULL";
+        case TOKEN_KEYWORD_MOD:
+            return "KEYWORD_MOD";
+        case TOKEN_KEYWORD_USE:
+            return "KEYWORD_USE";
+        case TOKEN_KEYWORD_INTERFACE:
+            return "KEYWORD_INTERFACE";
+        case TOKEN_KEYWORD_IMPL:
+            return "KEYWORD_IMPL";
+        case TOKEN_KEYWORD_UNION:
+            return "KEYWORD_UNION";
+        case TOKEN_KEYWORD_EXTERN:
+            return "KEYWORD_EXTERN";
+        case TOKEN_KEYWORD_EXPORT:
+            return "KEYWORD_EXPORT";
+        case TOKEN_KEYWORD_INLINE:
+            return "KEYWORD_INLINE";
+        case TOKEN_KEYWORD_DEFER:
+            return "KEYWORD_DEFER";
+        case TOKEN_KEYWORD_COMPTIME:
+            return "KEYWORD_COMPTIME";
+        case TOKEN_KEYWORD_STREAM:
+            return "KEYWORD_STREAM";
+        case TOKEN_KEYWORD_CAPABILITY:
+            return "KEYWORD_CAPABILITY";
+        case TOKEN_KEYWORD_PHANTOM_RESOURCE:
+            return "KEYWORD_PHANTOM_RESOURCE";
+        case TOKEN_KEYWORD_USING:
+            return "KEYWORD_USING";
+        case TOKEN_KEYWORD_WITH_CONTEXT:
+            return "KEYWORD_WITH_CONTEXT";
+        case TOKEN_KEYWORD_CONTEXT:
+            return "KEYWORD_CONTEXT";
+        case TOKEN_KEYWORD_PHANTOM:
+            return "KEYWORD_PHANTOM";
+        case TOKEN_KEYWORD_ORELSE:
+            return "KEYWORD_ORELSE";
+        case TOKEN_KEYWORD_CATCH:
+            return "KEYWORD_CATCH";
+        case TOKEN_KEYWORD_TRY:
+            return "KEYWORD_TRY";
         case TOKEN_KEYWORD_RETURN:
             return "KEYWORD_RETURN";
         case TOKEN_KEYWORD_BREAK:
