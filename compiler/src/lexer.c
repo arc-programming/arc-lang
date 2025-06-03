@@ -318,14 +318,42 @@ ArcToken arc_lexer_next_token(ArcLexer *lexer) {
         }
 
         return make_token(lexer, TOKEN_NUMBER_INT, token_start, token_loc);
-    }
-
-    // Handle string literals
+    }  // Handle string literals
     if (c == '"') {
         while (peek(lexer) != '"' && !is_at_end(lexer)) {
-            if (peek(lexer) == '\n')
-                lexer->current_line++;
-            advance(lexer);
+            if (peek(lexer) == '\\') {
+                advance(lexer);  // Skip backslash
+                if (!is_at_end(lexer)) {
+                    char escaped_char = peek(lexer);
+                    advance(lexer);  // Skip escaped character
+
+                    // Handle special unicode escape sequences in strings
+                    if (escaped_char == 'u') {
+                        if (peek(lexer) == '{') {
+                            advance(lexer);  // Skip opening brace
+                            // Skip hex digits until closing brace
+                            while (peek(lexer) != '}' && !is_at_end(lexer)) {
+                                if (!isxdigit(peek(lexer))) {
+                                    return make_error_token(
+                                        lexer, token_start, token_loc,
+                                        "Invalid unicode escape sequence in string");
+                                }
+                                advance(lexer);
+                            }
+                            if (peek(lexer) != '}') {
+                                return make_error_token(
+                                    lexer, token_start, token_loc,
+                                    "Unterminated unicode escape sequence in string");
+                            }
+                            advance(lexer);  // Skip closing brace
+                        }
+                    }
+                }
+            } else {
+                if (peek(lexer) == '\n')
+                    lexer->current_line++;
+                advance(lexer);
+            }
         }
 
         if (is_at_end(lexer)) {
