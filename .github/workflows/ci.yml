@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install clang-tidy and clang-format
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-tidy clang-format
+    
+    - name: Run clang-format check
+      run: |
+        find compiler/ -name "*.c" -o -name "*.h" | xargs clang-format --dry-run --Werror
+    
+    - name: Run clang-tidy
+      run: |
+        cd compiler
+        cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+        clang-tidy --config-file=../.clang-tidy $(find . -name "*.c")
+
+  build-and-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        build_type: [Debug, Release]
+        include:
+          - os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+          - os: macos-latest  
+            cc: clang
+            cxx: clang++
+          - os: windows-latest
+            cc: cl
+            cxx: cl
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install LLVM (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y llvm-14-dev libllvm14 llvm-14-tools
+    
+    - name: Install LLVM (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install llvm
+        echo "$(brew --prefix llvm)/bin" >> $GITHUB_PATH
+    
+    - name: Install LLVM (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        choco install llvm
+    
+    - name: Configure CMake
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} compiler/
+    
+    - name: Build
+      run: cmake --build build --config ${{ matrix.build_type }} --parallel
+    
+    - name: Test
+      working-directory: build
+      run: ctest --build-config ${{ matrix.build_type }} --output-on-failure
+    
+    - name: Test Compiler Integration
+      run: |
+        ./build/arc examples/hello_world/main.arc -o hello_world
+        ./hello_world
+
+  memory-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y valgrind llvm-14-dev libllvm14
+    
+    - name: Build with debug info
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=Debug compiler/
+        cmake --build build --parallel
+    
+    - name: Run tests with Valgrind
+      run: |
+        cd build
+        valgrind --tool=memcheck --leak-check=full --error-exitcode=1 ctest
+
+  coverage:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcov llvm-14-dev libllvm14
+    
+    - name: Build with coverage
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVERAGE=ON compiler/
+        cmake --build build --parallel
+    
+    - name: Run tests
+      run: |
+        cd build
+        ctest
+    
+    - name: Generate coverage report
+      run: |
+        gcov build/**/*.gcno
+        find . -name "*.gcov" -exec cat {} \;

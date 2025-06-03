@@ -1,0 +1,116 @@
+name: Bug Report
+description: Report a bug in the Arc compiler, standard library, or tools
+title: "[BUG] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the information below to help us diagnose and fix the issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is
+      placeholder: Describe what happened and what you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Create a file with this content: ...
+        2. Compile with: `arc compile ...`
+        3. Run with: `./program`
+        4. See error: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: code
+    attributes:
+      label: Minimal Reproducible Example
+      description: Minimal Arc code that demonstrates the issue
+      render: arc
+      placeholder: |
+        // Please provide the smallest possible Arc program that reproduces the issue
+        fn main() void {
+            // Your code here
+        }
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened (include error messages, stack traces, etc.)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of Arc is affected?
+      options:
+        - Compiler (lexer/parser)
+        - Compiler (semantic analysis)
+        - Compiler (code generation)
+        - Standard Library
+        - Build System
+        - Documentation
+        - Tools (formatter, LSP, etc.)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Arc Version
+      description: Output of `arc --version`
+      placeholder: "arc 0.1.0-dev"
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Your system information
+      placeholder: |
+        - OS: [e.g. Ubuntu 22.04, macOS 13.0, Windows 11]
+        - Architecture: [e.g. x86_64, arm64]
+        - Compiler: [e.g. GCC 11.2.0, Clang 14.0.0]
+        - LLVM Version: [if applicable]
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context about the problem (screenshots, logs, etc.)
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate
+          required: true
+        - label: I have provided a minimal reproducible example
+          required: true
+        - label: I am using the latest version of Arc (or have specified the version above)
+          required: true

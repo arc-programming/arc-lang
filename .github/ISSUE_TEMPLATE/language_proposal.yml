@@ -1,0 +1,81 @@
+name: Language Proposal
+description: Propose a change to the Arc language specification
+title: "[PROPOSAL] "
+labels: ["language-design", "proposal", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This template is for substantial language changes that would require updates to the language specification.
+        For smaller features, please use the "Feature Request" template instead.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Proposal Summary
+      description: Brief summary of the proposed language change
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation and Use Cases
+      description: What problem does this solve? Why is this change needed?
+    validations:
+      required: true
+
+  - type: textarea
+    id: detailed_design
+    attributes:
+      label: Detailed Design
+      description: Detailed explanation of the proposed change
+      placeholder: |
+        - Grammar changes
+        - Semantic rules
+        - Type system implications
+        - Runtime behavior
+        - Interaction with existing features
+    validations:
+      required: true
+
+  - type: textarea
+    id: syntax_example
+    attributes:
+      label: Syntax Examples
+      description: Show the proposed syntax with examples
+      render: arc
+
+  - type: textarea
+    id: drawbacks
+    attributes:
+      label: Drawbacks and Alternatives
+      description: Why might we NOT want to do this? What are the alternatives?
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation Strategy
+      description: How would this be implemented? What parts of the compiler would change?
+
+  - type: textarea
+    id: breaking_changes
+    attributes:
+      label: Breaking Changes
+      description: Would this break existing code? How can migration be handled?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I have read the Arc language specification
+          required: true
+        - label: I have considered backward compatibility
+          required: true
+        - label: I have searched for similar proposals
+          required: true
