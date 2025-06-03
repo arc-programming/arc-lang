@@ -18,6 +18,9 @@ static ArcAstNode *parse_expression(ArcParser *parser);
 static ArcAstNode *parse_primary(ArcParser *parser);
 static ArcAstNode *parse_type(ArcParser *parser);
 static ArcAstNode *parse_variable_declaration(ArcParser *parser);
+static ArcAstNode *parse_module_declaration(ArcParser *parser);
+static ArcAstNode *parse_use_declaration(ArcParser *parser);
+static ArcAstNode *parse_module_path(ArcParser *parser);
 
 // Utility functions
 static void advance(ArcParser *parser);
@@ -1505,14 +1508,111 @@ static ArcAstNode *parse_function_declaration(ArcParser *parser) {
     return node;
 }
 
+static ArcAstNode *parse_module_declaration(ArcParser *parser) {
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcToken mod_token = consume(parser, TOKEN_KEYWORD_MOD, "Expected 'mod'");
+    ArcToken name = consume(parser, TOKEN_IDENTIFIER, "Expected module name");
+
+    ArcAstNode *node = arc_ast_node_create(parser, AST_DECL_MODULE, source_info);
+    if (node) {
+        node->module_decl.mod_token = mod_token;
+        node->module_decl.name = name;
+    }
+
+    // Check if this is a module with a body or just a declaration
+    if (match(parser, TOKEN_LBRACE)) {
+        // Module with body: mod name { ... }
+        // For now, we'll parse the body as a block but not store it
+        // This is a simplified implementation
+        int brace_count = 1;
+        while (brace_count > 0 && !check(parser, TOKEN_EOF)) {
+            if (match(parser, TOKEN_LBRACE)) {
+                brace_count++;
+            } else if (match(parser, TOKEN_RBRACE)) {
+                brace_count--;
+            } else {
+                advance(parser);
+            }
+        }
+    } else {
+        // Simple module declaration: mod name;
+        consume(parser, TOKEN_SEMICOLON, "Expected ';' after module declaration");
+    }
+
+    return node;
+}
+
+static ArcAstNode *parse_module_path(ArcParser *parser) {
+    // Parse a module path like: std::io::File or just identifier
+    // For now, we'll create a simple identifier chain
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcToken first_name = consume(parser, TOKEN_IDENTIFIER, "Expected module path identifier");
+
+    // If we don't have ::, just return a simple identifier
+    if (!check(parser, TOKEN_DOUBLE_COLON)) {
+        ArcAstNode *node = arc_ast_node_create(parser, AST_IDENTIFIER, source_info);
+        if (node) {
+            node->identifier.token = first_name;
+        }
+        return node;
+    }
+
+    // Build a chain of field access expressions for module::path::syntax
+    ArcAstNode *current = arc_ast_node_create(parser, AST_IDENTIFIER, source_info);
+    if (current) {
+        current->identifier.token = first_name;
+    }
+
+    while (match(parser, TOKEN_DOUBLE_COLON)) {
+        ArcToken next_name = consume(parser, TOKEN_IDENTIFIER, "Expected identifier after '::'");
+
+        ArcSourceInfo access_source = arc_parser_current_source_info(parser);
+        ArcAstNode *access_node = arc_ast_node_create(parser, AST_EXPR_FIELD_ACCESS, access_source);
+        if (access_node) {
+            access_node->field_access_expr.object = current;
+            access_node->field_access_expr.field_name = next_name;
+            // Use previous :: token for dot_token (semantically similar)
+            access_node->field_access_expr.dot_token = parser->previous_token;
+        }
+        current = access_node;
+    }
+
+    return current;
+}
+
+static ArcAstNode *parse_use_declaration(ArcParser *parser) {
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcToken use_token = consume(parser, TOKEN_KEYWORD_USE, "Expected 'use'");
+
+    ArcAstNode *path = parse_module_path(parser);
+    consume(parser, TOKEN_SEMICOLON, "Expected ';' after use declaration");
+
+    ArcAstNode *node = arc_ast_node_create(parser, AST_DECL_USE, source_info);
+    if (node) {
+        node->use_decl.use_token = use_token;
+        node->use_decl.path = path;
+    }
+    return node;
+}
+
 static ArcAstNode *parse_declaration(ArcParser *parser) {
     ArcToken start_token = parser->current_token;  // Track starting position
 
     switch (parser->current_token.type) {
+        case TOKEN_KEYWORD_PUB:
+            // Handle public visibility modifier
+            advance(parser);  // consume 'pub'
+            // For now, just parse the following declaration (ignoring pub)
+            // TODO: Add pub flag to AST nodes
+            return parse_declaration(parser);
         case TOKEN_KEYWORD_FN:
             return parse_function_declaration(parser);
         case TOKEN_KEYWORD_VAR:
             return parse_variable_declaration(parser);
+        case TOKEN_KEYWORD_MOD:
+            return parse_module_declaration(parser);
+        case TOKEN_KEYWORD_USE:
+            return parse_use_declaration(parser);
         default:
             arc_parser_error(parser, "Expected declaration, got '%.*s'",
                              (int)parser->current_token.length, parser->current_token.start);
@@ -1640,6 +1740,19 @@ void arc_ast_node_print(const ArcAstNode *node, int depth) {
             printf("Body:\n");
             arc_ast_node_print(node->function_decl.body, depth + 2);
             break;
+
+        case AST_DECL_MODULE:
+            printf("ModuleDecl '%.*s'\n", (int)node->module_decl.name.length,
+                   node->module_decl.name.start);
+            break;
+
+        case AST_DECL_USE:
+            printf("UseDecl\n");
+            print_indent(depth + 1);
+            printf("Path:\n");
+            arc_ast_node_print(node->use_decl.path, depth + 2);
+            break;
+
         case AST_STMT_VAR_DECL:
             printf("VariableDecl '%.*s'\n", (int)node->var_decl_stmt.name.length,
                    node->var_decl_stmt.name.start);

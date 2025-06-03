@@ -156,6 +156,10 @@ ArcToken arc_lexer_next_token(ArcLexer *lexer) {
         case '?':
             return make_token(lexer, TOKEN_QUESTION, token_start, token_loc);
         case ':':
+            if (peek(lexer) == ':') {
+                advance(lexer);  // consume second ':'
+                return make_token(lexer, TOKEN_DOUBLE_COLON, token_start, token_loc);
+            }
             return make_token(lexer, TOKEN_COLON, token_start, token_loc);
         case '@':
             return make_token(lexer, TOKEN_AT, token_start, token_loc);
@@ -477,7 +481,8 @@ static ArcTokenType check_keyword(const char *start, size_t length) {
     struct {
         const char *keyword;
         ArcTokenType type;
-    } keywords[] = {{"mod", TOKEN_KEYWORD_MOD},
+    } keywords[] = {{"pub", TOKEN_KEYWORD_PUB},
+                    {"mod", TOKEN_KEYWORD_MOD},
                     {"use", TOKEN_KEYWORD_USE},
                     {"type", TOKEN_KEYWORD_TYPE},
                     {"struct", TOKEN_KEYWORD_STRUCT},
@@ -610,6 +615,8 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "QUESTION";
         case TOKEN_COLON:
             return "COLON";
+        case TOKEN_DOUBLE_COLON:
+            return "DOUBLE_COLON";
         case TOKEN_AT:
             return "AT";
         case TOKEN_HASH:
@@ -628,6 +635,8 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "NUMBER_FLOAT";
         case TOKEN_CHAR_LITERAL:
             return "CHAR_LITERAL";
+        case TOKEN_KEYWORD_PUB:
+            return "KEYWORD_PUB";
         case TOKEN_KEYWORD_MOD:
             return "KEYWORD_MOD";
         case TOKEN_KEYWORD_USE:

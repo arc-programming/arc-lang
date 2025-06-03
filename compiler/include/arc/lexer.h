@@ -37,6 +37,7 @@ typedef enum {
     TOKEN_CARET,                // ^ (bitwise XOR, or pointer type)
     TOKEN_QUESTION,             // ? (optional types/pointers)
     TOKEN_COLON,                // :
+    TOKEN_DOUBLE_COLON,         // :: (module path separator)
     TOKEN_ARROW,                // -> (function return, pipeline)
     TOKEN_PIPELINE,             // |> (pipeline operator)
     TOKEN_DOT_DOT,              // .. (range)
@@ -64,9 +65,8 @@ typedef enum {
     TOKEN_STRING_LITERAL,
     TOKEN_NUMBER_INT,    // For now, just integers
     TOKEN_NUMBER_FLOAT,  // Add later if needed
-    TOKEN_CHAR_LITERAL,
-
-    // Keywords (add all keywords from your Arc specification)
+    TOKEN_CHAR_LITERAL,  // Keywords (add all keywords from your Arc specification)
+    TOKEN_KEYWORD_PUB,
     TOKEN_KEYWORD_MOD,
     TOKEN_KEYWORD_USE,
     TOKEN_KEYWORD_TYPE,
