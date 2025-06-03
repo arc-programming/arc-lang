@@ -461,6 +461,8 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "LESS";
         case TOKEN_LESS_EQUAL:
             return "LESS_EQUAL";
+        case TOKEN_PIPELINE:
+            return "PIPELINE";
         case TOKEN_IDENTIFIER:
             return "IDENTIFIER";
         case TOKEN_STRING_LITERAL:
