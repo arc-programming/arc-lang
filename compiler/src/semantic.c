@@ -1486,13 +1486,17 @@ static bool arc_analyze_return_type_compatibility(ArcSemanticAnalyzer *analyzer,
         arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, source_info,
                            "Return statement outside of function");
         return false;
+    }  // Get expected return type from current function
+    ArcTypeInfo *expected_type = NULL;
+    if (analyzer->current_function && analyzer->current_function->declaration_node) {
+        ArcAstNode *return_type_node =
+            analyzer->current_function->declaration_node->function_decl.return_type;
+        if (return_type_node) {
+            expected_type = arc_type_from_ast(analyzer, return_type_node);
+        }
     }
 
-    // Get expected return type from current function
-    ArcTypeInfo *expected_type =
-        analyzer->current_function->type;  // This would need to be properly set
-
-    if (!expected_type) {
+    if (!expected_type || expected_type->kind == ARC_TYPE_VOID) {
         // Void function - no return value expected
         if (expr_type && expr_type->kind != ARC_TYPE_VOID) {
             arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_WARNING, source_info,
