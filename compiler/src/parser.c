@@ -913,8 +913,8 @@ static ArcAstNode *parse_primary(ArcParser *parser) {
 
 static ArcAstNode *parse_call(ArcParser *parser, ArcAstNode *function) {
     ArcSourceInfo source_info = arc_parser_current_source_info(parser);
-    ArcToken lparen_token = parser->current_token;
-    advance(parser);  // consume '('
+    ArcToken lparen_token = parser->previous_token;  // The '(' was already consumed by match()
+    // Don't advance here - the '(' has already been consumed
 
     ArcAstNode *node = arc_ast_node_create(parser, AST_EXPR_CALL, source_info);
     if (!node)
@@ -926,7 +926,6 @@ static ArcAstNode *parse_call(ArcParser *parser, ArcAstNode *function) {
     ArcAstNode **arguments = NULL;
     size_t argument_count = 0;
     size_t argument_capacity = 0;
-
     if (!check(parser, TOKEN_RPAREN)) {
         do {
             ArcAstNode *arg = parse_expression(parser);
@@ -944,6 +943,15 @@ static ArcAstNode *parse_call(ArcParser *parser, ArcAstNode *function) {
                     argument_capacity = new_capacity;
                 }
                 arguments[argument_count++] = arg;
+            } else {
+                // If expression parsing failed, we might be in an error state
+                // Try to recover by consuming tokens until we find a comma or closing paren
+                if (parser->panic_mode) {
+                    while (!check(parser, TOKEN_COMMA) && !check(parser, TOKEN_RPAREN) &&
+                           !check(parser, TOKEN_EOF)) {
+                        advance(parser);
+                    }
+                }
             }
         } while (match(parser, TOKEN_COMMA));
     }
