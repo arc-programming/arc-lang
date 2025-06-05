@@ -3053,7 +3053,7 @@ static void arc_check_unused_in_scope(ArcSemanticAnalyzer *analyzer, ArcScope *s
 
             // Skip check for now since we don't have usage tracking implemented
             // This would warn about all variables which isn't useful yet
-            (void)symbol;  // Suppress unused variable warning        }
+            (void)symbol;  // Suppress unused variable warning
         }
     }
 }
