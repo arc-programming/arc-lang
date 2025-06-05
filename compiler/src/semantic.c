@@ -24,8 +24,30 @@ static void arc_check_unused_in_scope(ArcSemanticAnalyzer *analyzer, ArcScope *s
 static bool arc_type_is_assignable(ArcTypeInfo *from, ArcTypeInfo *to);
 static ArcTypeInfo *arc_infer_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNode *expr);
 static bool arc_type_is_comparable(ArcTypeInfo *left, ArcTypeInfo *right);
-
+static char *arc_arena_strdup(ArcArena *arena, const char *s);
 // === MODULE RESOLUTION & IMPORT SYSTEM ===
+
+static char *arc_get_directory_from_path(ArcSemanticAnalyzer *analyzer, const char *filepath) {
+    if (!filepath)
+        return NULL;
+
+    const char *last_slash = strrchr(filepath, '/');
+    const char *last_bslash = strrchr(filepath, '\\');
+    const char *last_separator = last_slash > last_bslash ? last_slash : last_bslash;
+
+    if (!last_separator) {
+        // No directory part, it's in the current directory.
+        return arc_arena_strdup(analyzer->arena, ".");
+    }
+
+    size_t dir_len = (size_t)(last_separator - filepath);
+    char *dir = arc_arena_alloc(analyzer->arena, dir_len + 1);
+    if (dir) {
+        strncpy(dir, filepath, dir_len);
+        dir[dir_len] = '\0';
+    }
+    return dir;
+}
 
 // State of a module during the loading process to detect circular dependencies.
 typedef enum {
@@ -204,7 +226,40 @@ static ArcModuleFile *arc_module_resolve(const char *module_name) {
 static ArcModuleFile *arc_load_and_analyze_module(ArcSemanticAnalyzer *analyzer,
                                                   const char *module_name,
                                                   ArcSourceInfo import_site) {
+
+    // --- START NEW LOGIC ---
+    // Temporarily add the importing file's directory to the search paths.
+    char *source_dir = arc_get_directory_from_path(analyzer, import_site.filename);
+
+    // Save old paths to restore later
+    char **original_search_paths = module_resolver->search_paths;
+    size_t original_path_count = module_resolver->search_path_count;
+
+    // Create a new, temporary search path list
+    size_t new_path_count = original_path_count + 1;
+    char **new_search_paths = malloc(sizeof(char *) * new_path_count);
+    if (!new_search_paths) {
+        // Malloc failed, proceed with original paths
+    } else {
+        new_search_paths[0] = source_dir;  // Add our new path first
+        // Copy old paths
+        for (size_t i = 0; i < original_path_count; ++i) {
+            new_search_paths[i + 1] = original_search_paths[i];
+        }
+        module_resolver->search_paths = new_search_paths;
+        module_resolver->search_path_count = new_path_count;
+    }
+    // --- END NEW LOGIC ---
+
     ArcModuleFile *module_file = arc_module_resolve(module_name);
+
+    // --- RESTORE ORIGINAL PATHS ---
+    if (new_search_paths) {
+        module_resolver->search_paths = original_search_paths;
+        module_resolver->search_path_count = original_path_count;
+        free(new_search_paths);  // Free the temporary list container
+    }
+    // --- END RESTORE ---
     if (!module_file) {
         arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, import_site, "Module '%s' not found.",
                            module_name);
@@ -3061,4 +3116,15 @@ static void arc_check_unused_in_scope(ArcSemanticAnalyzer *analyzer, ArcScope *s
             (void)symbol;  // Suppress unused variable warning
         }
     }
+}
+
+static char *arc_arena_strdup(ArcArena *arena, const char *s) {
+    if (!s)
+        return NULL;
+    size_t len = strlen(s) + 1;
+    char *new_str = arc_arena_alloc(arena, len);
+    if (new_str) {
+        memcpy(new_str, s, len);
+    }
+    return new_str;
 }
