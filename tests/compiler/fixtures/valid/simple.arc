@@ -1,4 +1,4 @@
-fn main() {
-    var x = 42;
+func main() {
+    let x = 42;
     return x;
 }

@@ -7,16 +7,16 @@ type Point struct {
     y: f32;
 }
 
-fn distance(p1: Point, p2: Point) f32 {
-    var dx = p1.x - p2.x;
-    var dy = p1.y - p2.y;
+func distance(p1: Point, p2: Point) f32 {
+    let dx = p1.x - p2.x;
+    let dy = p1.y - p2.y;
     return math.sqrt(dx * dx + dy * dy);
 }
 
-fn main() Result(void, Error) {
-    var p1 = Point{.x = 1.0, .y = 2.0};
-    var p2 = Point{.x = 4.0, .y = 6.0};
-    var dist = distance(p1, p2);
+func main() Result(void, Error) {
+    let p1 = Point{.x = 1.0, .y = 2.0};
+    let p2 = Point{.x = 4.0, .y = 6.0};
+    let dist = distance(p1, p2);
     io.println("Distance: {dist}");
     return .Ok;
 }
