@@ -413,7 +413,19 @@ const char *arc_codegen_convert_type(ArcCodegen *codegen, ArcAstNode *type_node)
 char *arc_codegen_mangle_name(const char *arc_name) {
     if (!arc_name)
         return NULL;
+    // Don't mangle if it's an extern function (starts with known prefixes or is in a list)
+    // Common C library functions that shouldn't be mangled
+    const char *extern_functions[] = {"printf", "puts",   "scanf",  "malloc", "free",   "strlen",
+                                      "strcpy", "strcmp", "strcat", "memcpy", "memset", "fopen",
+                                      "fclose", "fread",  "fwrite", "exit",   "abort",  "atoi",
+                                      "atof",   "strtol", "strtod", NULL};
 
+    // Check if this is a known extern function
+    for (int i = 0; extern_functions[i] != NULL; i++) {
+        if (strcmp(arc_name, extern_functions[i]) == 0) {
+            return arc_strdup(arc_name);  // Return unmangled name
+        }
+    }
     // Simple mangling: just prefix with "arc_"
     size_t len = strlen(arc_name) + 5;  // "arc_" + name + null terminator
     char *mangled = MALLOC(len);

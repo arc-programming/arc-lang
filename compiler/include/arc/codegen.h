@@ -131,6 +131,7 @@ void arc_codegen_close_files(ArcCodegen *codegen);
 // Code generation for specific node types
 bool arc_codegen_generate_program(ArcCodegen *codegen, ArcAstNode *program);
 bool arc_codegen_generate_function(ArcCodegen *codegen, ArcAstNode *function);
+bool arc_codegen_generate_extern_function(ArcCodegen *codegen, ArcAstNode *extern_func);
 bool arc_codegen_generate_statement(ArcCodegen *codegen, ArcAstNode *statement);
 bool arc_codegen_generate_expression(ArcCodegen *codegen, ArcAstNode *expression);
 bool arc_codegen_generate_declaration(ArcCodegen *codegen, ArcAstNode *declaration);

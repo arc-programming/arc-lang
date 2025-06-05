@@ -8,6 +8,31 @@ static bool codegen_generate_expression_internal(ArcCodegen *codegen, ArcAstNode
 static bool codegen_generate_statement_internal(ArcCodegen *codegen, ArcAstNode *stmt);
 static bool codegen_generate_declaration_internal(ArcCodegen *codegen, ArcAstNode *decl);
 
+// Helper function to check if a function is a standard C library function
+static bool is_c_stdlib_function(const char *func_name) {
+    // List of common C standard library functions that shouldn't be redeclared
+    static const char *stdlib_functions[] = {
+        "printf",  "fprintf", "sprintf", "snprintf", "scanf",   "fscanf",  "sscanf",  "puts",
+        "fputs",   "putchar", "fputc",   "getchar",  "fgetc",   "gets",    "fgets",   "malloc",
+        "calloc",  "realloc", "free",    "strlen",   "strcpy",  "strncpy", "strcat",  "strncat",
+        "strcmp",  "strncmp", "strchr",  "strrchr",  "strstr",  "strtok",  "strspn",  "strcspn",
+        "memcpy",  "memmove", "memset",  "memcmp",   "memchr",  "fopen",   "fclose",  "fread",
+        "fwrite",  "fseek",   "ftell",   "rewind",   "fflush",  "sin",     "cos",     "tan",
+        "asin",    "acos",    "atan",    "atan2",    "sinh",    "cosh",    "tanh",    "exp",
+        "log",     "log10",   "pow",     "sqrt",     "ceil",    "floor",   "fabs",    "fmod",
+        "frexp",   "ldexp",   "modf",    "rand",     "srand",   "abs",     "labs",    "div",
+        "ldiv",    "atoi",    "atol",    "atof",     "strtol",  "strtoul", "strtod",  "exit",
+        "abort",   "atexit",  "system",  "getenv",   "isalnum", "isalpha", "isdigit", "islower",
+        "isupper", "isspace", "tolower", "toupper",  NULL};
+
+    for (size_t i = 0; stdlib_functions[i] != NULL; i++) {
+        if (strcmp(func_name, stdlib_functions[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // --- Main Generation Entry Points ---
 
 bool arc_codegen_generate(ArcCodegen *codegen, ArcAstNode *ast,
@@ -214,10 +239,111 @@ static bool codegen_generate_declaration_internal(ArcCodegen *codegen, ArcAstNod
         case AST_DECL_FUNCTION:
             return arc_codegen_generate_function(codegen, decl);
 
+        case AST_DECL_EXTERN:
+            return arc_codegen_generate_extern_function(codegen, decl);
+
         default:
             arc_codegen_set_error(codegen, "Unsupported declaration type: %d", decl->type);
             return false;
     }
+}
+
+// --- Extern Function Generation ---
+
+bool arc_codegen_generate_extern_function(ArcCodegen *codegen, ArcAstNode *extern_func) {
+    if (!codegen || !extern_func || extern_func->type != AST_DECL_EXTERN) {
+        arc_codegen_set_error(codegen, "Invalid extern function node");
+        return false;
+    }
+
+    // Get return type (default to void if not specified)
+    const char *return_type = "void";
+    if (extern_func->extern_decl.return_type) {
+        return_type = arc_codegen_convert_type(codegen, extern_func->extern_decl.return_type);
+    }
+
+    // Extract function name
+    char *func_name_temp = MALLOC(extern_func->extern_decl.name.length + 1);
+    if (!func_name_temp) {
+        arc_codegen_set_error(codegen, "Failed to allocate memory for extern function name");
+        return false;
+    }
+    strncpy(func_name_temp, extern_func->extern_decl.name.start,
+            extern_func->extern_decl.name.length);
+    func_name_temp[extern_func->extern_decl.name.length] = '\0';
+
+    // For extern functions, use the original name (no mangling) unless c_name is specified
+    char *func_name = NULL;
+    if (extern_func->extern_decl.c_name && extern_func->extern_decl.c_name[0] != '\0') {
+        // Use the specified C name
+        size_t c_name_len = strlen(extern_func->extern_decl.c_name);
+        func_name = MALLOC(c_name_len + 1);
+        if (func_name) {
+            strcpy(func_name, extern_func->extern_decl.c_name);
+        }
+    } else {
+        // Use the Arc function name as-is for C linkage
+        func_name = MALLOC(strlen(func_name_temp) + 1);
+        if (func_name) {
+            strcpy(func_name, func_name_temp);
+        }
+    }
+    FREE(func_name_temp);
+    if (!func_name) {
+        arc_codegen_set_error(codegen, "Failed to allocate function name");
+        return false;
+    }
+
+    // Check if this is a C standard library function - if so, skip generating the extern
+    // declaration
+    if (is_c_stdlib_function(func_name)) {
+        // Skip generating extern declaration for C stdlib functions
+        // They are already available through standard headers
+        FREE(func_name);
+        return true;
+    }
+
+    // Generate extern function declaration
+    arc_codegen_emit(codegen, "extern %s %s(", return_type, func_name);
+
+    // Generate parameters
+    if (extern_func->extern_decl.parameter_count > 0) {
+        for (size_t i = 0; i < extern_func->extern_decl.parameter_count; i++) {
+            if (i > 0) {
+                arc_codegen_emit(codegen, ", ");
+            }
+
+            ArcAstNode *param = extern_func->extern_decl.parameters[i];
+            if (param->type == AST_PARAMETER) {
+                const char *param_type = "int";  // Default type
+                if (param->parameter.type_annotation) {
+                    param_type =
+                        arc_codegen_convert_type(codegen, param->parameter.type_annotation);
+                }
+
+                // Extract parameter name
+                char *param_name_temp = MALLOC(param->parameter.name.length + 1);
+                if (!param_name_temp) {
+                    arc_codegen_set_error(codegen, "Failed to allocate memory for parameter name");
+                    FREE(func_name);
+                    return false;
+                }
+                strncpy(param_name_temp, param->parameter.name.start, param->parameter.name.length);
+                param_name_temp[param->parameter.name.length] = '\0';
+
+                arc_codegen_emit(codegen, "%s %s", param_type, param_name_temp);
+                FREE(param_name_temp);
+            }
+        }
+    } else {
+        arc_codegen_emit(codegen, "void");
+    }
+
+    arc_codegen_emit_line(codegen, ");");
+    arc_codegen_emit_line(codegen, "");
+
+    FREE(func_name);
+    return true;
 }
 
 // --- Function Generation ---
