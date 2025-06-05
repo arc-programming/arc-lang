@@ -238,6 +238,9 @@ static const char *arc_type_to_string(ArcTypeInfo *type) {
     }
 }
 
+#define INT32_MIN -2147483648
+#define INT32_MAX 2147483647
+
 // Enhanced expression type inference
 static ArcTypeInfo *arc_infer_literal_type(ArcSemanticAnalyzer *analyzer, ArcAstNode *expr) {
     switch (expr->type) {
@@ -2164,18 +2167,55 @@ bool arc_analyze_statement(ArcSemanticAnalyzer *analyzer, ArcAstNode *stmt) {
             }
             return true;
         }
-
         case AST_STMT_DEFER: {
             // Defer statement analysis
             // Defer statements execute at the end of the current scope
             // For now, just analyze the deferred statement
             return arc_analyze_statement(analyzer, stmt->defer_stmt.statement);
         }
+        case AST_STMT_EXPRESSION: {
+            // Expression statement analysis
+            ArcTypeInfo *expr_type =
+                arc_analyze_expression_type(analyzer, stmt->expr_stmt.expression);
+            return expr_type != NULL;
+        }
+
+        case AST_STMT_RETURN: {
+            // Return statement analysis
+            if (!analyzer->current_function) {
+                arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, stmt->source_info,
+                                   "Return statement outside of function");
+                return false;
+            }
+
+            // Analyze return value if present
+            if (stmt->return_stmt.value) {
+                ArcTypeInfo *return_type =
+                    arc_analyze_expression_type(analyzer, stmt->return_stmt.value);
+                if (!return_type) {
+                    return false;
+                }
+
+                // Check return type compatibility
+                if (!arc_analyze_return_type_compatibility(analyzer, return_type,
+                                                           stmt->source_info)) {
+                    return false;
+                }
+            } else {
+                // Void return - check if function expects void
+                // TODO: Implement proper return type checking when function types are complete
+            }
+
+            analyzer->has_return = true;
+            return true;
+        }
 
         default:
             // For unimplemented statement types, just emit a warning and continue
-            arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_WARNING, stmt->source_info,
-                               "Statement analysis not yet implemented for this statement type");
+            arc_diagnostic_add(
+                analyzer, ARC_DIAGNOSTIC_WARNING, stmt->source_info,
+                "Statement analysis not yet implemented for this statement type (type: %d)",
+                stmt->type);
             return true;
     }
 }
