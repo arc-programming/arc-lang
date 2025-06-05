@@ -883,7 +883,8 @@ bool arc_semantic_has_errors(ArcSemanticAnalyzer *analyzer) {
 ArcTypeInfo *arc_type_from_ast(ArcSemanticAnalyzer *analyzer, ArcAstNode *type_node) {
     if (!type_node)
         return NULL;
-    switch (type_node->type) {        case AST_TYPE_PRIMITIVE: {
+    switch (type_node->type) {
+        case AST_TYPE_PRIMITIVE: {
             // Handle both actual primitive keywords and identifiers used as primitive types
             if (type_node->type_primitive.primitive_type == TOKEN_IDENTIFIER) {
                 // This is a type identifier that was parsed as primitive
@@ -894,10 +895,10 @@ ArcTypeInfo *arc_type_from_ast(ArcSemanticAnalyzer *analyzer, ArcAstNode *type_n
                                        "Type name too long");
                     return NULL;
                 }
-                
+
                 strncpy(type_name, type_node->type_primitive.token.start, name_len);
                 type_name[name_len] = '\0';
-                
+
                 // Map common type names to token types
                 if (strcmp(type_name, "i8") == 0) {
                     return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_I8);
