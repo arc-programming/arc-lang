@@ -1362,9 +1362,7 @@ bool arc_analyze_declaration(ArcSemanticAnalyzer *analyzer, ArcAstNode *decl) {
                 arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, decl->source_info,
                                    "Function '%s' already declared in this scope", name);
                 return false;
-            }
-
-            // Create function symbol
+            }  // Create function symbol
             ArcSymbol *symbol = arc_symbol_create(analyzer, ARC_SYMBOL_FUNCTION, name);
             if (!symbol) {
                 arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, decl->source_info,
@@ -1376,10 +1374,19 @@ bool arc_analyze_declaration(ArcSemanticAnalyzer *analyzer, ArcAstNode *decl) {
             symbol->is_defined = (decl->function_decl.body != NULL);
             symbol->parameter_count = decl->function_decl.parameter_count;  // Set parameter count
 
-            // TODO: Create function type from parameters and return type
-            // For now, just set a placeholder type
-            symbol->type =
-                arc_type_create(analyzer, ARC_TYPE_FUNCTION);  // Validate function signature
+            // Create function type with return type
+            symbol->type = arc_type_create(analyzer, ARC_TYPE_FUNCTION);
+            if (symbol->type) {
+                // Set return type from declaration
+                if (decl->function_decl.return_type) {
+                    symbol->type->function.return_type =
+                        arc_type_from_ast(analyzer, decl->function_decl.return_type);
+                } else {
+                    // Default to void if no return type specified
+                    symbol->type->function.return_type =
+                        arc_type_get_builtin(analyzer, TOKEN_KEYWORD_VOID);
+                }
+            }
             if (!arc_validate_function_signature(analyzer, decl)) {
                 return false;
             }
@@ -1959,11 +1966,19 @@ bool arc_analyze_statement(ArcSemanticAnalyzer *analyzer, ArcAstNode *stmt) {
                 arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, stmt->source_info,
                                    "Variable '%s' has no type annotation or initializer", name);
                 return false;
+            }  // Set other symbol properties
+            symbol->declaration_node = stmt;
+
+            // Determine mutability based on declaration keyword
+            if (stmt->var_decl_stmt.var_token.type == TOKEN_KEYWORD_LET) {
+                symbol->is_mutable = false;  // let declarations are immutable
+            } else if (stmt->var_decl_stmt.var_token.type == TOKEN_KEYWORD_MUT) {
+                symbol->is_mutable = true;  // mut declarations are mutable
+            } else {
+                // Fallback for any other cases (shouldn't happen with current parser)
+                symbol->is_mutable = false;
             }
 
-            // Set other symbol properties
-            symbol->declaration_node = stmt;
-            symbol->is_mutable = true;  // var declarations are mutable
             symbol->is_public = false;  // local variables are not public
             symbol->is_defined = true;
 

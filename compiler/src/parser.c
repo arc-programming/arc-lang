@@ -1676,6 +1676,7 @@ static ArcAstNode *parse_statement(ArcParser *parser) {
             return parse_block_statement(parser);
         case TOKEN_KEYWORD_LET:
         case TOKEN_KEYWORD_MUT:
+        case TOKEN_KEYWORD_CONST:
             return parse_variable_declaration(parser);
 
         // Handle block terminators
