@@ -16,6 +16,13 @@ func hello() {
 let value: i32 = 42
 const PI = 3.14159
 
+func print(a: i32) -> void {
+    std::print(a)
+
+    return a + 2
+}
+
+
 func add(a: i32, b: i32) -> i32 {
     return a + b
 }
