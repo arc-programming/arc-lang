@@ -7,6 +7,7 @@
 static bool codegen_generate_expression_internal(ArcCodegen *codegen, ArcAstNode *expr);
 static bool codegen_generate_statement_internal(ArcCodegen *codegen, ArcAstNode *stmt);
 static bool codegen_generate_declaration_internal(ArcCodegen *codegen, ArcAstNode *decl);
+static const char *arc_codegen_convert_type_info(ArcCodegen *codegen, ArcTypeInfo *type_info);
 
 // Helper function to check if a function is a standard C library function
 static bool is_c_stdlib_function(const char *func_name) {
@@ -31,6 +32,26 @@ static bool is_c_stdlib_function(const char *func_name) {
         }
     }
     return false;
+}
+
+static const char *arc_codegen_convert_type_info(ArcCodegen *codegen, ArcTypeInfo *type_info) {
+    if (!type_info)
+        return "void";  // Default fallback
+
+    switch (type_info->kind) {
+        case ARC_TYPE_PRIMITIVE:
+            return arc_codegen_primitive_to_c_type(type_info->primitive.primitive_type);
+        case ARC_TYPE_POINTER: {
+            const char *pointed_type =
+                arc_codegen_convert_type_info(codegen, type_info->pointer.pointed_type);
+            static char buffer[256];
+            snprintf(buffer, sizeof(buffer), "%s*", pointed_type);
+            return buffer;
+        }
+        // TODO: Add other types like array, slice, etc. as needed
+        default:
+            return "void";
+    }
 }
 
 // --- Main Generation Entry Points ---
@@ -242,15 +263,19 @@ static bool codegen_generate_declaration_internal(ArcCodegen *codegen, ArcAstNod
         case AST_DECL_EXTERN:
             return arc_codegen_generate_extern_function(codegen, decl);
 
+        // --- START FIX ---
+        // Teach the codegen that these statements are valid at the top level.
+        case AST_STMT_VAR_DECL:
+        case AST_STMT_CONST_DECL:
+            // Delegate to the existing statement generator.
+            return arc_codegen_generate_statement(codegen, decl);
+            // --- END FIX ---
+
         case AST_DECL_USE:
-            // Use declarations are handled during semantic analysis
-            // and don't generate C code directly
-            return true;
+            return true;  // No code gen needed
 
         case AST_DECL_MODULE:
-            // Module declarations are handled during semantic analysis
-            // and don't generate C code directly
-            return true;
+            return true;  // No code gen needed
 
         default:
             arc_codegen_set_error(codegen, "Unsupported declaration type: %d", decl->type);
@@ -504,20 +529,21 @@ static bool codegen_generate_statement_internal(ArcCodegen *codegen, ArcAstNode 
         }
 
         case AST_STMT_CONST_DECL: {
-            // Generate const declaration
-            const char *const_type = "int";  // Default type
-            if (stmt->const_decl_stmt.type_annotation) {
-                const_type =
-                    arc_codegen_convert_type(codegen, stmt->const_decl_stmt.type_annotation);
-            }
+            // --- START FIX ---
             char *const_name_temp = MALLOC(stmt->const_decl_stmt.name.length + 1);
-            if (!const_name_temp) {
-                arc_codegen_set_error(codegen, "Failed to allocate memory for constant name");
-                return false;
-            }
+            // ... (your existing code to copy the name)
             strncpy(const_name_temp, stmt->const_decl_stmt.name.start,
                     stmt->const_decl_stmt.name.length);
             const_name_temp[stmt->const_decl_stmt.name.length] = '\0';
+
+            // Look up the symbol in the semantic analyzer to get its real type
+            ArcSymbol *symbol = arc_scope_lookup_symbol_recursive(
+                codegen->semantic_analyzer->current_scope, const_name_temp);
+
+            const char *const_type = "int";  // Default
+            if (symbol && symbol->type) {
+                const_type = arc_codegen_convert_type_info(codegen, symbol->type);
+            }
 
             char *const_name = arc_codegen_mangle_name(const_name_temp);
             FREE(const_name_temp);
@@ -525,8 +551,9 @@ static bool codegen_generate_statement_internal(ArcCodegen *codegen, ArcAstNode 
                 arc_codegen_set_error(codegen, "Failed to mangle constant name");
                 return false;
             }
-
+            // Emit the constant declaration
             arc_codegen_emit(codegen, "const %s %s", const_type, const_name);
+            // --- END FIX ---
 
             if (stmt->const_decl_stmt.initializer) {
                 arc_codegen_emit(codegen, " = ");

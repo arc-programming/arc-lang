@@ -20,6 +20,7 @@ static ArcAstNode *parse_primary(ArcParser *parser);
 static ArcAstNode *parse_type(ArcParser *parser);
 static ArcAstNode *parse_type_postfix(ArcParser *parser);
 static ArcAstNode *parse_variable_declaration(ArcParser *parser);
+static ArcAstNode *parse_const_declaration(ArcParser *parser);
 static ArcAstNode *parse_module_declaration(ArcParser *parser);
 static ArcAstNode *parse_use_declaration(ArcParser *parser);
 static ArcAstNode *parse_module_path(ArcParser *parser);
@@ -27,7 +28,6 @@ static ArcAstNode *parse_scope_resolution(ArcParser *parser, ArcAstNode *left);
 static ArcAstNode *parse_match_statement(ArcParser *parser);
 static ArcAstNode *parse_defer_statement(ArcParser *parser);
 static ArcAstNode *parse_scope_resolution(ArcParser *parser, ArcAstNode *left);
-
 // Utility functions
 static void advance(ArcParser *parser);
 static bool check(const ArcParser *parser, ArcTokenType type);
@@ -2169,6 +2169,41 @@ static ArcAstNode *parse_extern_declaration(ArcParser *parser) {
     return node;
 }
 
+static ArcAstNode *parse_const_declaration(ArcParser *parser) {
+    ArcSourceInfo start_info = arc_parser_current_source_info(parser);
+
+    // FIX: Use 'consume' instead of 'expect'
+    consume(parser, TOKEN_KEYWORD_CONST, "Expected 'const' keyword.");
+
+    ArcToken name = consume(parser, TOKEN_IDENTIFIER, "Expected constant name.");
+    if (parser->had_error)
+        return NULL;
+
+    ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_CONST_DECL, start_info);
+    node->const_decl_stmt.name = name;
+    node->const_decl_stmt.const_token = parser->previous_token;
+
+    // Handle optional type annotation
+    if (match(parser, TOKEN_COLON)) {
+        node->const_decl_stmt.type_annotation = parse_type(parser);
+    } else {
+        // If no type is specified, explicitly set the pointer to NULL.
+        node->const_decl_stmt.type_annotation = NULL;
+    }
+
+    // FIX: Use 'consume' instead of 'expect'
+    consume(parser, TOKEN_EQUAL, "Constants must be initialized.");
+    if (parser->had_error)
+        return NULL;
+
+    node->const_decl_stmt.initializer = parse_expression(parser);
+    if (parser->had_error)
+        return NULL;
+
+    // FIX: Use 'consume' instead of 'expect'
+    consume(parser, TOKEN_SEMICOLON, "Expected ';' after constant declaration.");
+    return node;
+}
 static ArcAstNode *parse_declaration(ArcParser *parser) {
     ArcToken start_token = parser->current_token;  // Track starting position
     bool is_public = false;
@@ -2187,6 +2222,8 @@ static ArcAstNode *parse_declaration(ArcParser *parser) {
             decl = parse_function_declaration(parser);
             break;
         case TOKEN_KEYWORD_CONST:
+            decl = parse_const_declaration(parser);
+            break;
         case TOKEN_KEYWORD_LET:
         case TOKEN_KEYWORD_MUT:
             decl = parse_variable_declaration(parser);
