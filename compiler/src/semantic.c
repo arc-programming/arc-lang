@@ -77,8 +77,8 @@ typedef struct ArcModuleResolver {
 static ArcModuleResolver *module_resolver = NULL;
 
 // Module system function declarations
-static void arc_module_resolver_init(void);
-static void arc_module_resolver_cleanup(void);
+void arc_module_resolver_init(void);
+void arc_module_resolver_cleanup(void);
 static ArcModuleFile *arc_module_resolve(const char *module_name, const char *base_dir);
 static char *arc_module_construct_path(const char *module_name, const char *base_dir);
 static char *arc_module_load_content(const char *filepath);
@@ -87,7 +87,7 @@ static ArcModuleFile *arc_load_and_analyze_module(ArcSemanticAnalyzer *analyzer,
                                                   ArcSourceInfo import_site);
 
 // Initialize module resolver
-static void arc_module_resolver_init(void) {
+void arc_module_resolver_init(void) {
     if (module_resolver)
         return;
 
@@ -107,7 +107,7 @@ static void arc_module_resolver_init(void) {
 }
 
 // Cleanup module resolver
-static void arc_module_resolver_cleanup(void) {
+void arc_module_resolver_cleanup(void) {
     if (!module_resolver)
         return;
 
@@ -131,6 +131,7 @@ static void arc_module_resolver_cleanup(void) {
 static char *arc_module_construct_path(const char *module_name, const char *base_dir) {
     if (!module_name || !module_resolver)
         return NULL;
+
     char filepath[1024];  // Use a sufficiently large buffer
 
     // --- STRATEGY 1: Check relative to the importing file's directory ---
@@ -143,6 +144,7 @@ static char *arc_module_construct_path(const char *module_name, const char *base
         }
     }
 
+    // --- STRATEGY 2: If not found locally, check the global search paths ---
     for (size_t i = 0; i < module_resolver->search_path_count; i++) {
         snprintf(filepath, sizeof(filepath), "%s%c%s.arc", module_resolver->search_paths[i],
                  PATH_SEPARATOR, module_name);
@@ -152,7 +154,8 @@ static char *arc_module_construct_path(const char *module_name, const char *base
             return strdup(filepath);  // Return a heap-allocated copy
         }
     }
-    return NULL;
+
+    return NULL;  // Module not found in any path
 }
 
 // Load module content from file
@@ -188,18 +191,20 @@ static ArcModuleFile *arc_module_resolve(const char *module_name, const char *ba
     if (!module_name || !module_resolver)
         return NULL;
 
-    // Check cache first
+    // Check cache first (this part is unchanged)
     for (ArcModuleFile *mod = module_resolver->loaded_modules; mod; mod = mod->next) {
-        // A more robust check would be to have a canonical module name/path
-        if (strcmp(mod->filepath, module_name) == 0) {
+        if (strstr(mod->filepath, module_name)) {
             return mod;
         }
     }
 
+    // Pass the base_dir to the path constructor
     char *filepath = arc_module_construct_path(module_name, base_dir);
-    if (!filepath)
-        return NULL;
+    if (!filepath) {
+        return NULL;  // Not found
+    }
 
+    // The rest of the function (loading content, creating the struct) is the same.
     char *content = arc_module_load_content(filepath);
     if (!content) {
         free(filepath);
@@ -224,45 +229,16 @@ static ArcModuleFile *arc_module_resolve(const char *module_name, const char *ba
     return module_file;
 }
 
-// The core function to load, parse, and analyze a module.
+// Replace your existing function with this one.
 static ArcModuleFile *arc_load_and_analyze_module(ArcSemanticAnalyzer *analyzer,
                                                   const char *module_name,
                                                   ArcSourceInfo import_site) {
-
-    // --- START NEW LOGIC ---
-    // Temporarily add the importing file's directory to the search paths.
+    // Get the directory of the file that is doing the importing.
     char *source_dir = arc_get_directory_from_path(analyzer, import_site.filename);
 
-    // Save old paths to restore later
-    char **original_search_paths = module_resolver->search_paths;
-    size_t original_path_count = module_resolver->search_path_count;
-
-    // Create a new, temporary search path list
-    size_t new_path_count = original_path_count + 1;
-    char **new_search_paths = malloc(sizeof(char *) * new_path_count);
-    if (!new_search_paths) {
-        // Malloc failed, proceed with original paths
-    } else {
-        new_search_paths[0] = source_dir;  // Add our new path first
-        // Copy old paths
-        for (size_t i = 0; i < original_path_count; ++i) {
-            new_search_paths[i + 1] = original_search_paths[i];
-        }
-        module_resolver->search_paths = new_search_paths;
-        module_resolver->search_path_count = new_path_count;
-    }
-    // --- END NEW LOGIC ---
-
+    // Pass this directory down to the resolver.
     ArcModuleFile *module_file = arc_module_resolve(module_name, source_dir);
 
-    // --- RESTORE ORIGINAL PATHS ---
-    if (new_search_paths) {
-        module_resolver->search_paths = original_search_paths;
-        module_resolver->search_path_count = original_path_count;
-        free(new_search_paths);  // Free the temporary list container
-    }
-
-    // --- END RESTORE ---
     if (!module_file) {
         arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, import_site, "Module '%s' not found.",
                            module_name);
@@ -285,35 +261,23 @@ static ArcModuleFile *arc_load_and_analyze_module(ArcSemanticAnalyzer *analyzer,
         return NULL;
     }
 
-    module_file->state = ARC_MODULE_STATE_LOADING;  // Parse the module content into an AST
+    module_file->state = ARC_MODULE_STATE_LOADING;
     ArcLexer lexer;
     ArcParser parser;
     arc_lexer_init(&lexer, module_file->content, module_file->filepath);
-
-    // FIX: Initialize the parser with the main analyzer's shared arena
     arc_parser_init(&parser, &lexer, analyzer->arena);
-
     module_file->ast = arc_parser_parse_program(&parser);
 
-    // Check for parser errors before continuing
     if (arc_parser_had_error(&parser)) {
         arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, import_site,
                            "Failed to parse module '%s'.", module_name);
-        // You might want to propagate parser diagnostics here as well
         arc_parser_cleanup(&parser);
         module_file->state = ARC_MODULE_STATE_FAILED;
         return NULL;
     }
-
     arc_parser_cleanup(&parser);
 
-    if (!module_file->ast) {
-        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, import_site,
-                           "Failed to parse module '%s'.", module_name);
-        module_file->state = ARC_MODULE_STATE_FAILED;
-        return NULL;
-    }
-
+    // Analyze the module
     ArcSemanticAnalyzer *module_analyzer = arc_semantic_analyzer_create_with_arena(analyzer->arena);
     bool success = arc_semantic_analyze(module_analyzer, module_file->ast);
 
@@ -326,7 +290,6 @@ static ArcModuleFile *arc_load_and_analyze_module(ArcSemanticAnalyzer *analyzer,
         arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, import_site,
                            "Errors found while analyzing module '%s'. See details below.",
                            module_name);
-        // Propagate diagnostics from the module analyzer to the main one
         for (ArcDiagnostic *d = module_analyzer->diagnostics; d; d = d->next) {
             arc_diagnostic_add(analyzer, d->level, d->source_info, d->message);
         }

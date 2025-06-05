@@ -188,4 +188,7 @@ ArcTypeInfo *arc_analyze_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNo
 bool arc_analyze_declaration(ArcSemanticAnalyzer *analyzer, ArcAstNode *decl);
 bool arc_analyze_statement(ArcSemanticAnalyzer *analyzer, ArcAstNode *stmt);
 
+void arc_module_resolver_init(void);
+void arc_module_resolver_cleanup(void);
+
 #endif  // ARC_SEMANTIC_H

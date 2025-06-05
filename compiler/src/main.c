@@ -1,4 +1,5 @@
 #include "arc/cli.h"
+#include "arc/semantic.h"  // Contains prototypes for module resolver functions
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +11,11 @@ int main(int argc, char *argv[]) {
         return CLI_ERROR_ARGS;
     }
 
+    // ====================================================================
+    // FIX: Initialize the global module system ONCE at the very beginning.
+    arc_module_resolver_init();
+    // ====================================================================
+
     // Initialize CLI context
     CliContext ctx;
 
@@ -20,6 +26,8 @@ int main(int argc, char *argv[]) {
 
     CliResult parse_result = cli_parse_global_options(&ctx, &argc, &argv);
     if (parse_result != CLI_SUCCESS) {
+        // Cleanup before exiting on error
+        arc_module_resolver_cleanup();
         return parse_result;
     }
 
@@ -28,11 +36,13 @@ int main(int argc, char *argv[]) {
         if (strcmp(original_argv[i], "-h") == 0 || strcmp(original_argv[i], "--help") == 0) {
             cli_print_help(original_argv[0]);
             free(argv);  // Free the modified argv from cli_parse_global_options
+            arc_module_resolver_cleanup();
             return CLI_SUCCESS;
         }
         if (strcmp(original_argv[i], "--version") == 0) {
             cli_print_version();
             free(argv);  // Free the modified argv from cli_parse_global_options
+            arc_module_resolver_cleanup();
             return CLI_SUCCESS;
         }
     }
@@ -42,6 +52,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error: No command specified\n");
         cli_print_help(original_argv[0]);
         free(argv);
+        arc_module_resolver_cleanup();
         return CLI_ERROR_ARGS;
     }
 
@@ -55,6 +66,11 @@ int main(int argc, char *argv[]) {
 
     // Clean up the modified argv
     free(argv);
+
+    // ====================================================================
+    // FIX: Clean up the global module system ONCE at the very end.
+    arc_module_resolver_cleanup();
+    // ====================================================================
 
     return result;
 }
