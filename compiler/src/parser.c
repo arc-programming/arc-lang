@@ -1487,12 +1487,27 @@ static ArcAstNode *parse_if_statement(ArcParser *parser) {
 
     ArcAstNode *condition = parse_expression(parser);
     ArcAstNode *then_stmt = parse_statement(parser);
-    ArcAstNode *else_stmt = NULL;
+    ArcAstNode *else_stmt = NULL;  // Handle elif and else
+    if (check(parser, TOKEN_KEYWORD_ELIF)) {
+        advance(parser);  // consume 'elif'
+        ArcAstNode *elif_condition = parse_expression(parser);
+        ArcAstNode *elif_then_stmt = parse_statement(parser);
 
-    // Handle elif chains
-    if (match(parser, TOKEN_KEYWORD_ELIF)) {
-        // elif is essentially "else if", so create nested if statement
-        else_stmt = parse_if_statement(parser);
+        // Create nested if statement for elif
+        ArcSourceInfo elif_source_info = arc_parser_current_source_info(parser);
+        ArcAstNode *elif_node = arc_ast_node_create(parser, AST_STMT_IF, elif_source_info);
+        if (elif_node) {
+            elif_node->if_stmt.if_token = if_token;  // Reuse token for simplicity
+            elif_node->if_stmt.condition = elif_condition;
+            elif_node->if_stmt.then_branch = elif_then_stmt;
+            elif_node->if_stmt.else_branch = NULL;
+
+            // Handle else after elif
+            if (match(parser, TOKEN_KEYWORD_ELSE)) {
+                elif_node->if_stmt.else_branch = parse_statement(parser);
+            }
+        }
+        else_stmt = elif_node;
     } else if (match(parser, TOKEN_KEYWORD_ELSE)) {
         else_stmt = parse_statement(parser);
     }
