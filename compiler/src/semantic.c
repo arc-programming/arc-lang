@@ -79,8 +79,8 @@ static ArcModuleResolver *module_resolver = NULL;
 // Module system function declarations
 static void arc_module_resolver_init(void);
 static void arc_module_resolver_cleanup(void);
-static ArcModuleFile *arc_module_resolve(const char *module_name);
-static char *arc_module_construct_path(const char *module_name);
+static ArcModuleFile *arc_module_resolve(const char *module_name, const char *base_dir);
+static char *arc_module_construct_path(const char *module_name, const char *base_dir);
 static char *arc_module_load_content(const char *filepath);
 static ArcModuleFile *arc_load_and_analyze_module(ArcSemanticAnalyzer *analyzer,
                                                   const char *module_name,
@@ -128,27 +128,29 @@ static void arc_module_resolver_cleanup(void) {
 }
 
 // Construct module file path from module name
-static char *arc_module_construct_path(const char *module_name) {
+static char *arc_module_construct_path(const char *module_name, const char *base_dir) {
     if (!module_name || !module_resolver)
         return NULL;
+    char filepath[1024];  // Use a sufficiently large buffer
 
-    for (size_t i = 0; i < module_resolver->search_path_count; i++) {
-        size_t path_len = strlen(module_resolver->search_paths[i]) + strlen(module_name) + 10;
-        char *filepath = malloc(path_len);
-        if (!filepath)
-            continue;
-#ifdef _WIN32
-        snprintf(filepath, path_len, "%s\\%s.arc", module_resolver->search_paths[i], module_name);
-#else
-        snprintf(filepath, path_len, "%s/%s.arc", module_resolver->search_paths[i], module_name);
-#endif
-
+    // --- STRATEGY 1: Check relative to the importing file's directory ---
+    if (base_dir) {
+        snprintf(filepath, sizeof(filepath), "%s%c%s.arc", base_dir, PATH_SEPARATOR, module_name);
         FILE *file = fopen(filepath, "r");
         if (file) {
             fclose(file);
-            return filepath;
+            return strdup(filepath);  // Return a heap-allocated copy
         }
-        free(filepath);
+    }
+
+    for (size_t i = 0; i < module_resolver->search_path_count; i++) {
+        snprintf(filepath, sizeof(filepath), "%s%c%s.arc", module_resolver->search_paths[i],
+                 PATH_SEPARATOR, module_name);
+        FILE *file = fopen(filepath, "r");
+        if (file) {
+            fclose(file);
+            return strdup(filepath);  // Return a heap-allocated copy
+        }
     }
     return NULL;
 }
@@ -182,19 +184,19 @@ static char *arc_module_load_content(const char *filepath) {
 }
 
 // Find or load a module by name
-static ArcModuleFile *arc_module_resolve(const char *module_name) {
+static ArcModuleFile *arc_module_resolve(const char *module_name, const char *base_dir) {
     if (!module_name || !module_resolver)
         return NULL;
 
     // Check cache first
     for (ArcModuleFile *mod = module_resolver->loaded_modules; mod; mod = mod->next) {
         // A more robust check would be to have a canonical module name/path
-        if (strstr(mod->filepath, module_name)) {
+        if (strcmp(mod->filepath, module_name) == 0) {
             return mod;
         }
     }
 
-    char *filepath = arc_module_construct_path(module_name);
+    char *filepath = arc_module_construct_path(module_name, base_dir);
     if (!filepath)
         return NULL;
 
@@ -251,7 +253,7 @@ static ArcModuleFile *arc_load_and_analyze_module(ArcSemanticAnalyzer *analyzer,
     }
     // --- END NEW LOGIC ---
 
-    ArcModuleFile *module_file = arc_module_resolve(module_name);
+    ArcModuleFile *module_file = arc_module_resolve(module_name, source_dir);
 
     // --- RESTORE ORIGINAL PATHS ---
     if (new_search_paths) {
@@ -259,6 +261,7 @@ static ArcModuleFile *arc_load_and_analyze_module(ArcSemanticAnalyzer *analyzer,
         module_resolver->search_path_count = original_path_count;
         free(new_search_paths);  // Free the temporary list container
     }
+
     // --- END RESTORE ---
     if (!module_file) {
         arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, import_site, "Module '%s' not found.",
