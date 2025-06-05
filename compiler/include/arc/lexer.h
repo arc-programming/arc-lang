@@ -102,6 +102,9 @@ typedef enum {
     TOKEN_KEYWORD_CONTINUE,
     TOKEN_KEYWORD_RETURN,
     TOKEN_KEYWORD_YIELD,
+    TOKEN_KEYWORD_AND,  // Logical and operator
+    TOKEN_KEYWORD_OR,   // Logical or operator
+    TOKEN_KEYWORD_NOT,  // Logical not operator
     TOKEN_KEYWORD_DEFER,
     TOKEN_KEYWORD_COMPTIME,
     TOKEN_KEYWORD_STREAM,

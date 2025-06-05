@@ -22,12 +22,18 @@ static ArcAstNode *parse_variable_declaration(ArcParser *parser);
 static ArcAstNode *parse_module_declaration(ArcParser *parser);
 static ArcAstNode *parse_use_declaration(ArcParser *parser);
 static ArcAstNode *parse_module_path(ArcParser *parser);
+static ArcAstNode *parse_scope_resolution(ArcParser *parser, ArcAstNode *left);
+static ArcAstNode *parse_match_statement(ArcParser *parser);
+static ArcAstNode *parse_defer_statement(ArcParser *parser);
+static ArcAstNode *parse_scope_resolution(ArcParser *parser, ArcAstNode *left);
 
 // Utility functions
 static void advance(ArcParser *parser);
 static bool check(const ArcParser *parser, ArcTokenType type);
 static bool match(ArcParser *parser, ArcTokenType type);
 static ArcToken consume(ArcParser *parser, ArcTokenType type, const char *message);
+static void consume_statement_terminator(ArcParser *parser);
+static bool is_statement_terminator(const ArcParser *parser);
 // static void skip_to_sync_point(ArcParser *parser);
 
 // === ARENA ALLOCATOR IMPLEMENTATION ===
@@ -578,21 +584,21 @@ void arc_parser_synchronize(ArcParser *parser) {
     if (parser->current_token.type != TOKEN_EOF) {
         advance(parser);
     }
-
     while (parser->current_token.type != TOKEN_EOF) {
-        if (parser->previous_token.type == TOKEN_SEMICOLON) {
+        if (parser->previous_token.type == TOKEN_SEMICOLON ||
+            parser->previous_token.type == TOKEN_NEWLINE) {
             parser->synchronizing = false;
             return;
         }
-
         switch (parser->current_token.type) {
-            case TOKEN_KEYWORD_FN:
+            case TOKEN_KEYWORD_FUNC:
             case TOKEN_KEYWORD_STRUCT:
             case TOKEN_KEYWORD_ENUM:
             case TOKEN_KEYWORD_TYPE:
             case TOKEN_KEYWORD_INTERFACE:
             case TOKEN_KEYWORD_IMPL:
-            case TOKEN_KEYWORD_VAR:
+            case TOKEN_KEYWORD_LET:
+            case TOKEN_KEYWORD_MUT:
             case TOKEN_KEYWORD_CONST:
             case TOKEN_KEYWORD_IF:
             case TOKEN_KEYWORD_WHILE:
@@ -613,39 +619,87 @@ void arc_parser_synchronize(ArcParser *parser) {
     parser->synchronizing = false;
 }
 
+// Helper functions for semicolon-less statement termination
+static bool is_statement_terminator(const ArcParser *parser) {
+    // Statement can be terminated by:
+    // 1. Newline
+    // 2. End of block (})
+    // 3. End of file
+    // 4. Semicolon (still supported for compatibility)
+    return check(parser, TOKEN_NEWLINE) || check(parser, TOKEN_RBRACE) ||
+           check(parser, TOKEN_EOF) || check(parser, TOKEN_SEMICOLON);
+}
+
+static void consume_statement_terminator(ArcParser *parser) {
+    // For semicolon-less syntax, we accept newlines, end of block, or semicolons
+    if (match(parser, TOKEN_SEMICOLON)) {
+        // Still support semicolons for compatibility
+        return;
+    } else if (match(parser, TOKEN_NEWLINE)) {
+        // Consume any additional newlines
+        while (match(parser, TOKEN_NEWLINE)) {
+            // Continue consuming newlines
+        }
+        return;
+    } else if (check(parser, TOKEN_RBRACE) || check(parser, TOKEN_EOF)) {
+        // End of block or file - don't consume these tokens
+        return;
+    }
+    // If we reach here and it's not a valid terminator, it's an error
+    // but we'll let the calling code handle it
+}
+
 // === PARSING FUNCTIONS ===
 
 // Parse binary operator precedence
 typedef enum {
     PREC_NONE,
-    PREC_ASSIGNMENT,   // =, +=, -=, etc.
-    PREC_OR,           // ||
-    PREC_AND,          // &&
-    PREC_EQUALITY,     // ==, !=
-    PREC_COMPARISON,   // <, >, <=, >=
-    PREC_BITWISE_OR,   // |
-    PREC_BITWISE_XOR,  // ^
-    PREC_BITWISE_AND,  // &
-    PREC_SHIFT,        // <<, >>
-    PREC_TERM,         // +, -
-    PREC_FACTOR,       // *, /, %
-    PREC_UNARY,        // !, -, &, *
-    PREC_CALL,         // (), [], .
+    PREC_ASSIGNMENT,       // =, +=, -=, etc., :=
+    PREC_PIPELINE,         // |>, ~>, <|
+    PREC_NULL_COALESCING,  // ??
+    PREC_OR,               // ||, or
+    PREC_AND,              // &&, and
+    PREC_EQUALITY,         // ==, !=
+    PREC_COMPARISON,       // <, >, <=, >=, <=>
+    PREC_BITWISE_OR,       // |
+    PREC_BITWISE_XOR,      // ^
+    PREC_BITWISE_AND,      // &
+    PREC_SHIFT,            // <<, >>
+    PREC_TERM,             // +, -
+    PREC_FACTOR,           // *, /, %
+    PREC_POWER,            // **
+    PREC_UNARY,            // !, -, &, *, not, !!
+    PREC_CALL,             // (), [], ., ::
     PREC_PRIMARY
 } Precedence;
 
 static Precedence get_token_precedence(ArcTokenType type) {
     switch (type) {
         case TOKEN_EQUAL:
+        case TOKEN_WALRUS:  // :=
         case TOKEN_PLUS_EQUAL:
         case TOKEN_MINUS_EQUAL:
         case TOKEN_ASTERISK_EQUAL:
         case TOKEN_SLASH_EQUAL:
         case TOKEN_PERCENT_EQUAL:
+        case TOKEN_POWER_EQUAL:
+        case TOKEN_AMPERSAND_EQUAL:
+        case TOKEN_PIPE_EQUAL:
+        case TOKEN_CARET_EQUAL:
+        case TOKEN_LEFT_SHIFT_EQUAL:
+        case TOKEN_RIGHT_SHIFT_EQUAL:
             return PREC_ASSIGNMENT;
+        case TOKEN_PIPELINE:          // |>
+        case TOKEN_ASYNC_PIPELINE:    // ~>
+        case TOKEN_REVERSE_PIPELINE:  // <|
+            return PREC_PIPELINE;
+        case TOKEN_NULL_COALESCING:  // ??
+            return PREC_NULL_COALESCING;
         case TOKEN_PIPE_PIPE:
+        case TOKEN_KEYWORD_OR:
             return PREC_OR;
         case TOKEN_AMPERSAND_AMPERSAND:
+        case TOKEN_KEYWORD_AND:
             return PREC_AND;
         case TOKEN_EQUAL_EQUAL:
         case TOKEN_BANG_EQUAL:
@@ -654,6 +708,7 @@ static Precedence get_token_precedence(ArcTokenType type) {
         case TOKEN_LESS_EQUAL:
         case TOKEN_GREATER:
         case TOKEN_GREATER_EQUAL:
+        case TOKEN_SPACESHIP:  // <=>
             return PREC_COMPARISON;
         case TOKEN_PIPE:
             return PREC_BITWISE_OR;
@@ -671,9 +726,12 @@ static Precedence get_token_precedence(ArcTokenType type) {
         case TOKEN_SLASH:
         case TOKEN_PERCENT:
             return PREC_FACTOR;
+        case TOKEN_POWER:  // **
+            return PREC_POWER;
         case TOKEN_LPAREN:
         case TOKEN_LBRACKET:
         case TOKEN_DOT:
+        case TOKEN_DOUBLE_COLON:  // ::
             return PREC_CALL;
         default:
             return PREC_NONE;
@@ -692,6 +750,8 @@ static ArcBinaryOperator token_to_binary_op(ArcTokenType type) {
             return BINARY_OP_DIV;
         case TOKEN_PERCENT:
             return BINARY_OP_MOD;
+        case TOKEN_POWER:
+            return BINARY_OP_POW;
         case TOKEN_EQUAL_EQUAL:
             return BINARY_OP_EQ;
         case TOKEN_BANG_EQUAL:
@@ -704,9 +764,13 @@ static ArcBinaryOperator token_to_binary_op(ArcTokenType type) {
             return BINARY_OP_GT;
         case TOKEN_GREATER_EQUAL:
             return BINARY_OP_GE;
+        case TOKEN_SPACESHIP:
+            return BINARY_OP_SPACESHIP;
         case TOKEN_AMPERSAND_AMPERSAND:
+        case TOKEN_KEYWORD_AND:
             return BINARY_OP_AND;
         case TOKEN_PIPE_PIPE:
+        case TOKEN_KEYWORD_OR:
             return BINARY_OP_OR;
         case TOKEN_AMPERSAND:
             return BINARY_OP_BIT_AND;
@@ -718,8 +782,20 @@ static ArcBinaryOperator token_to_binary_op(ArcTokenType type) {
             return BINARY_OP_BIT_SHL;
         case TOKEN_RIGHT_SHIFT:
             return BINARY_OP_BIT_SHR;
+        case TOKEN_PIPELINE:
+            return BINARY_OP_PIPELINE;
+        case TOKEN_ASYNC_PIPELINE:
+            return BINARY_OP_ASYNC_PIPELINE;
+        case TOKEN_REVERSE_PIPELINE:
+            return BINARY_OP_REVERSE_PIPELINE;
+        case TOKEN_NULL_COALESCING:
+            return BINARY_OP_NULL_COALESCING;
+        case TOKEN_DOUBLE_COLON:
+            return BINARY_OP_SCOPE_RESOLUTION;
         case TOKEN_EQUAL:
             return BINARY_OP_ASSIGN;
+        case TOKEN_WALRUS:
+            return BINARY_OP_WALRUS;
         case TOKEN_PLUS_EQUAL:
             return BINARY_OP_ADD_ASSIGN;
         case TOKEN_MINUS_EQUAL:
@@ -730,6 +806,18 @@ static ArcBinaryOperator token_to_binary_op(ArcTokenType type) {
             return BINARY_OP_DIV_ASSIGN;
         case TOKEN_PERCENT_EQUAL:
             return BINARY_OP_MOD_ASSIGN;
+        case TOKEN_POWER_EQUAL:
+            return BINARY_OP_POW_ASSIGN;
+        case TOKEN_AMPERSAND_EQUAL:
+            return BINARY_OP_AND_ASSIGN;
+        case TOKEN_PIPE_EQUAL:
+            return BINARY_OP_OR_ASSIGN;
+        case TOKEN_CARET_EQUAL:
+            return BINARY_OP_XOR_ASSIGN;
+        case TOKEN_LEFT_SHIFT_EQUAL:
+            return BINARY_OP_SHL_ASSIGN;
+        case TOKEN_RIGHT_SHIFT_EQUAL:
+            return BINARY_OP_SHR_ASSIGN;
         default:
             return BINARY_OP_ADD;  // Fallback - should not happen
     }
@@ -745,6 +833,10 @@ static ArcUnaryOperator token_to_unary_op(ArcTokenType type) {
             return UNARY_OP_ADDRESS;
         case TOKEN_ASTERISK:
             return UNARY_OP_DEREFERENCE;
+        case TOKEN_KEYWORD_NOT:
+            return UNARY_OP_LOGICAL_NOT;
+        case TOKEN_FORCE_UNWRAP:
+            return UNARY_OP_FORCE_UNWRAP;
         default:
             return UNARY_OP_NOT;  // Fallback - should not happen
     }
@@ -819,8 +911,7 @@ static ArcAstNode *parse_primary(ArcParser *parser) {
             }
             return node;
         }
-
-        case TOKEN_KEYWORD_NULL: {
+        case TOKEN_KEYWORD_NIL: {
             ArcToken token = parser->current_token;
             advance(parser);
 
@@ -1007,7 +1098,8 @@ static ArcAstNode *parse_field_access(ArcParser *parser, ArcAstNode *object) {
 
 static ArcAstNode *parse_unary(ArcParser *parser) {
     if (match(parser, TOKEN_BANG) || match(parser, TOKEN_MINUS) || match(parser, TOKEN_AMPERSAND) ||
-        match(parser, TOKEN_ASTERISK)) {
+        match(parser, TOKEN_ASTERISK) || match(parser, TOKEN_KEYWORD_NOT) ||
+        match(parser, TOKEN_FORCE_UNWRAP)) {
 
         ArcToken operator_token = parser->previous_token;
         ArcSourceInfo source_info = arc_source_info_from_token(&operator_token, NULL);
@@ -1023,9 +1115,8 @@ static ArcAstNode *parse_unary(ArcParser *parser) {
         return node;
     }
 
-    ArcAstNode *primary = parse_primary(parser);
-
-    // Handle postfix operators (call, index, field access)
+    ArcAstNode *primary = parse_primary(
+        parser);  // Handle postfix operators (call, index, field access, scope resolution)
     while (true) {
         if (match(parser, TOKEN_LPAREN)) {
             primary = parse_call(parser, primary);
@@ -1033,6 +1124,8 @@ static ArcAstNode *parse_unary(ArcParser *parser) {
             primary = parse_index(parser, primary);
         } else if (match(parser, TOKEN_DOT)) {
             primary = parse_field_access(parser, primary);
+        } else if (match(parser, TOKEN_DOUBLE_COLON)) {
+            primary = parse_scope_resolution(parser, primary);
         } else {
             break;
         }
@@ -1192,12 +1285,12 @@ static ArcAstNode *parse_base_type(ArcParser *parser) {
                 return node;
             }
         }
-        case TOKEN_KEYWORD_FN: {
-            // Function type: fn(params) -> ReturnType
-            ArcToken fn_token = parser->current_token;
+        case TOKEN_KEYWORD_FUNC: {
+            // Function type: func(params) -> ReturnType
+            ArcToken func_token = parser->current_token;
             advance(parser);
 
-            consume(parser, TOKEN_LPAREN, "Expected '(' after 'fn'");
+            consume(parser, TOKEN_LPAREN, "Expected '(' after 'func'");
 
             // Parse parameter types
             ArcAstNode **parameter_types = NULL;
@@ -1243,7 +1336,7 @@ static ArcAstNode *parse_base_type(ArcParser *parser) {
                 }
                 node->type_function.parameter_count = parameter_count;
                 node->type_function.return_type = return_type;
-                node->type_function.fn_token = fn_token;
+                node->type_function.fn_token = func_token;
             }
 
             free(parameter_types);
@@ -1297,18 +1390,15 @@ static ArcAstNode *parse_expression_statement(ArcParser *parser) {
         return NULL;
     }
 
-    ArcAstNode *expr = parse_expression(parser);
-
-    // If expression parsing failed, try to recover
+    ArcAstNode *expr = parse_expression(parser);  // If expression parsing failed, try to recover
     if (!expr) {
-        // Skip tokens until we find a semicolon or sync point
-        while (!check(parser, TOKEN_SEMICOLON) && !check(parser, TOKEN_EOF) &&
-               !check(parser, TOKEN_RBRACE)) {
+        // Skip tokens until we find a statement terminator
+        while (!is_statement_terminator(parser)) {
             advance(parser);
         }
     }
 
-    consume(parser, TOKEN_SEMICOLON, "Expected ';' after expression");
+    consume_statement_terminator(parser);
 
     ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_EXPRESSION, source_info);
     if (node) {
@@ -1399,7 +1489,11 @@ static ArcAstNode *parse_if_statement(ArcParser *parser) {
     ArcAstNode *then_stmt = parse_statement(parser);
     ArcAstNode *else_stmt = NULL;
 
-    if (match(parser, TOKEN_KEYWORD_ELSE)) {
+    // Handle elif chains
+    if (match(parser, TOKEN_KEYWORD_ELIF)) {
+        // elif is essentially "else if", so create nested if statement
+        else_stmt = parse_if_statement(parser);
+    } else if (match(parser, TOKEN_KEYWORD_ELSE)) {
         else_stmt = parse_statement(parser);
     }
 
@@ -1458,7 +1552,7 @@ static ArcAstNode *parse_return_statement(ArcParser *parser) {
         value = parse_expression(parser);
     }
 
-    consume(parser, TOKEN_SEMICOLON, "Expected ';' after return statement");
+    consume_statement_terminator(parser);
 
     ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_RETURN, source_info);
     if (node) {
@@ -1472,7 +1566,7 @@ static ArcAstNode *parse_break_statement(ArcParser *parser) {
     ArcSourceInfo source_info = arc_parser_current_source_info(parser);
     ArcToken break_token = consume(parser, TOKEN_KEYWORD_BREAK, "Expected 'break'");
 
-    consume(parser, TOKEN_SEMICOLON, "Expected ';' after break statement");
+    consume_statement_terminator(parser);
 
     ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_BREAK, source_info);
     if (node) {
@@ -1485,12 +1579,54 @@ static ArcAstNode *parse_continue_statement(ArcParser *parser) {
     ArcSourceInfo source_info = arc_parser_current_source_info(parser);
     ArcToken continue_token = consume(parser, TOKEN_KEYWORD_CONTINUE, "Expected 'continue'");
 
-    consume(parser, TOKEN_SEMICOLON, "Expected ';' after continue statement");
+    consume_statement_terminator(parser);
 
     ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_CONTINUE, source_info);
     if (node) {
         node->continue_stmt.continue_token = continue_token;
     }
+    return node;
+}
+
+static ArcAstNode *parse_match_statement(ArcParser *parser) {
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcToken match_token = consume(parser, TOKEN_KEYWORD_MATCH, "Expected 'match'");
+
+    ArcAstNode *value = parse_expression(parser);
+    consume(parser, TOKEN_LBRACE, "Expected '{' after match expression");
+
+    // For now, create a simple AST node - full match implementation would need more work
+    ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_EXPRESSION, source_info);
+    if (node) {
+        // Store match information in expression statement for now
+        node->expr_stmt.expression = value;
+        // Use the match_token to avoid unused variable warning
+        (void)match_token;
+    }
+
+    // Skip to closing brace (simplified implementation)
+    while (!check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
+        advance(parser);
+    }
+    consume(parser, TOKEN_RBRACE, "Expected '}' after match body");
+
+    return node;
+}
+
+static ArcAstNode *parse_defer_statement(ArcParser *parser) {
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcToken defer_token = consume(parser, TOKEN_KEYWORD_DEFER, "Expected 'defer'");
+
+    ArcAstNode *stmt = parse_statement(parser);
+
+    // For now, wrap in expression statement
+    ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_EXPRESSION, source_info);
+    if (node) {
+        node->expr_stmt.expression = stmt;
+        // Use the defer_token to avoid unused variable warning
+        (void)defer_token;
+    }
+
     return node;
 }
 
@@ -1517,9 +1653,14 @@ static ArcAstNode *parse_statement(ArcParser *parser) {
             return parse_break_statement(parser);
         case TOKEN_KEYWORD_CONTINUE:
             return parse_continue_statement(parser);
+        case TOKEN_KEYWORD_MATCH:
+            return parse_match_statement(parser);
+        case TOKEN_KEYWORD_DEFER:
+            return parse_defer_statement(parser);
         case TOKEN_LBRACE:
             return parse_block_statement(parser);
-        case TOKEN_KEYWORD_VAR:
+        case TOKEN_KEYWORD_LET:
+        case TOKEN_KEYWORD_MUT:
             return parse_variable_declaration(parser);
 
         // Handle block terminators
@@ -1539,14 +1680,18 @@ static ArcAstNode *parse_statement(ArcParser *parser) {
 static ArcAstNode *parse_variable_declaration(ArcParser *parser) {
     ArcSourceInfo source_info = arc_parser_current_source_info(parser);
 
-    // Handle let, const, or var keywords
+    // Handle let, mut, or const keywords
     ArcToken decl_token;
     if (check(parser, TOKEN_KEYWORD_LET)) {
         decl_token = consume(parser, TOKEN_KEYWORD_LET, "Expected 'let'");
+    } else if (check(parser, TOKEN_KEYWORD_MUT)) {
+        decl_token = consume(parser, TOKEN_KEYWORD_MUT, "Expected 'mut'");
     } else if (check(parser, TOKEN_KEYWORD_CONST)) {
         decl_token = consume(parser, TOKEN_KEYWORD_CONST, "Expected 'const'");
     } else {
-        decl_token = consume(parser, TOKEN_KEYWORD_VAR, "Expected 'var'");
+        // Error - should not reach here given the switch cases
+        arc_parser_error(parser, "Expected variable declaration keyword");
+        return NULL;
     }
 
     ArcToken name = consume(parser, TOKEN_IDENTIFIER, "Expected variable name");
@@ -1561,7 +1706,7 @@ static ArcAstNode *parse_variable_declaration(ArcParser *parser) {
         initializer = parse_expression(parser);
     }
 
-    consume(parser, TOKEN_SEMICOLON, "Expected ';' after variable declaration");
+    consume_statement_terminator(parser);
 
     ArcAstNode *node = arc_ast_node_create(parser, AST_STMT_VAR_DECL, source_info);
     if (node) {
@@ -1576,8 +1721,8 @@ static ArcAstNode *parse_variable_declaration(ArcParser *parser) {
 static ArcAstNode *parse_function_declaration(ArcParser *parser) {
     printf("parse_function_declaration: starting\n");
     ArcSourceInfo source_info = arc_parser_current_source_info(parser);
-    ArcToken fn_token = consume(parser, TOKEN_KEYWORD_FN, "Expected 'fn'");
-    printf("parse_function_declaration: consumed 'fn'\n");
+    ArcToken func_token = consume(parser, TOKEN_KEYWORD_FUNC, "Expected 'func'");
+    printf("parse_function_declaration: consumed 'func'\n");
 
     ArcToken name = consume(parser, TOKEN_IDENTIFIER, "Expected function name");
     printf("parse_function_declaration: consumed function name '%.*s'\n", (int)name.length,
@@ -1644,7 +1789,7 @@ static ArcAstNode *parse_function_declaration(ArcParser *parser) {
 
     ArcAstNode *node = arc_ast_node_create(parser, AST_DECL_FUNCTION, source_info);
     if (node) {
-        node->function_decl.fn_token = fn_token;
+        node->function_decl.fn_token = func_token;
         node->function_decl.name = name;
         node->function_decl.parameter_count = parameter_count;
         node->function_decl.return_type = return_type;
@@ -1695,7 +1840,7 @@ static ArcAstNode *parse_module_declaration(ArcParser *parser) {
         }
     } else {
         // Simple module declaration: mod name;
-        consume(parser, TOKEN_SEMICOLON, "Expected ';' after module declaration");
+        consume_statement_terminator(parser);
     }
 
     return node;
@@ -1744,7 +1889,7 @@ static ArcAstNode *parse_use_declaration(ArcParser *parser) {
     ArcToken use_token = consume(parser, TOKEN_KEYWORD_USE, "Expected 'use'");
 
     ArcAstNode *path = parse_module_path(parser);
-    consume(parser, TOKEN_SEMICOLON, "Expected ';' after use declaration");
+    consume_statement_terminator(parser);
 
     ArcAstNode *node = arc_ast_node_create(parser, AST_DECL_USE, source_info);
     if (node) {
@@ -1764,11 +1909,11 @@ static ArcAstNode *parse_declaration(ArcParser *parser) {
             // For now, just parse the following declaration (ignoring pub)
             // TODO: Add pub flag to AST nodes
             return parse_declaration(parser);
-        case TOKEN_KEYWORD_FN:
+        case TOKEN_KEYWORD_FUNC:
             return parse_function_declaration(parser);
         case TOKEN_KEYWORD_CONST:
         case TOKEN_KEYWORD_LET:
-        case TOKEN_KEYWORD_VAR:
+        case TOKEN_KEYWORD_MUT:
             return parse_variable_declaration(parser);
         case TOKEN_KEYWORD_MOD:
             return parse_module_declaration(parser);
@@ -2108,6 +2253,7 @@ void arc_ast_node_print(const ArcAstNode *node, int depth) {
             printf("SliceType\n");
             arc_ast_node_print(node->type_slice.element_type, depth + 1);
             break;
+
         case AST_TYPE_OPTIONAL:
             printf("OptionalType\n");
             arc_ast_node_print(node->type_optional.inner_type, depth + 1);
@@ -2131,4 +2277,26 @@ void arc_ast_node_print(const ArcAstNode *node, int depth) {
             printf("Unknown node type: %d\n", node->type);
             break;
     }
+}
+
+static ArcAstNode *parse_scope_resolution(ArcParser *parser, ArcAstNode *left) {
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcToken scope_token = parser->previous_token;  // '::' was already consumed
+
+    ArcToken right_name = consume(parser, TOKEN_IDENTIFIER, "Expected identifier after '::'");
+
+    ArcAstNode *node = arc_ast_node_create(parser, AST_EXPR_BINARY, source_info);
+    if (node) {
+        node->binary_expr.left = left;
+        node->binary_expr.right = NULL;  // Could be a simple identifier or more complex
+        node->binary_expr.op_type = BINARY_OP_SCOPE_RESOLUTION;
+        node->binary_expr.operator_token = scope_token;
+        // Create a simple identifier node for the right side
+        ArcAstNode *right_node = arc_ast_node_create(parser, AST_IDENTIFIER, source_info);
+        if (right_node) {
+            right_node->identifier.token = right_name;
+            node->binary_expr.right = right_node;
+        }
+    }
+    return node;
 }

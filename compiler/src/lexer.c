@@ -584,9 +584,9 @@ static ArcTokenType check_keyword(const char *start, size_t length) {
                     {"try", TOKEN_KEYWORD_TRY},
                     {"guard", TOKEN_KEYWORD_GUARD},
                     {"then", TOKEN_KEYWORD_THEN},
-                    {"and", TOKEN_AND},
-                    {"or", TOKEN_OR},
-                    {"not", TOKEN_NOT},
+                    {"and", TOKEN_KEYWORD_AND},
+                    {"or", TOKEN_KEYWORD_OR},
+                    {"not", TOKEN_KEYWORD_NOT},
                     // Legacy keywords for backward compatibility
                     // Primitive types
                     {"i8", TOKEN_KEYWORD_I8},
@@ -690,8 +690,18 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "PLUS_EQUAL";
         case TOKEN_MINUS_EQUAL:
             return "MINUS_EQUAL";
+        case TOKEN_ASTERISK_EQUAL:
+            return "ASTERISK_EQUAL";
         case TOKEN_SLASH_EQUAL:
             return "SLASH_EQUAL";
+        case TOKEN_PERCENT_EQUAL:
+            return "PERCENT_EQUAL";
+        case TOKEN_POWER_EQUAL:
+            return "POWER_EQUAL";
+        case TOKEN_LEFT_SHIFT_EQUAL:
+            return "LEFT_SHIFT_EQUAL";
+        case TOKEN_RIGHT_SHIFT_EQUAL:
+            return "RIGHT_SHIFT_EQUAL";
         case TOKEN_CARET_EQUAL:
             return "CARET_EQUAL";
         case TOKEN_QUESTION:
@@ -740,6 +750,8 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "KEYWORD_CONST";
         case TOKEN_KEYWORD_LET:
             return "KEYWORD_LET";
+        case TOKEN_KEYWORD_MUT:
+            return "KEYWORD_MUT";
         case TOKEN_KEYWORD_IF:
             return "KEYWORD_IF";
         case TOKEN_KEYWORD_ELIF:
@@ -796,7 +808,11 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "KEYWORD_CATCH";
         case TOKEN_KEYWORD_TRY:
             return "KEYWORD_TRY";
-        // Primitive types
+        case TOKEN_KEYWORD_GUARD:
+            return "KEYWORD_GUARD";
+        case TOKEN_KEYWORD_THEN:
+            return "KEYWORD_THEN";
+        // Primitive type keywords
         case TOKEN_KEYWORD_I8:
             return "KEYWORD_I8";
         case TOKEN_KEYWORD_I16:
@@ -827,33 +843,13 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "KEYWORD_CHAR";
         case TOKEN_KEYWORD_VOID:
             return "KEYWORD_VOID";
-        // New tokens
-        case TOKEN_KEYWORD_MUT:
-            return "KEYWORD_MUT";
-        case TOKEN_KEYWORD_WHEN:
-            return "KEYWORD_WHEN";
-        case TOKEN_KEYWORD_YIELD:
-            return "KEYWORD_YIELD";
-        case TOKEN_KEYWORD_WITH:
-            return "KEYWORD_WITH";
-        case TOKEN_KEYWORD_GRANT:
-            return "KEYWORD_GRANT";
-        case TOKEN_KEYWORD_REVOKE:
-            return "KEYWORD_REVOKE";
-        case TOKEN_KEYWORD_PIPELINE:
-            return "KEYWORD_PIPELINE";
-        case TOKEN_KEYWORD_ASYNC:
-            return "KEYWORD_ASYNC";
-        case TOKEN_KEYWORD_AWAIT:
-            return "KEYWORD_AWAIT";
-        case TOKEN_KEYWORD_SYNC:
-            return "KEYWORD_SYNC";
-        case TOKEN_KEYWORD_NIL:
-            return "KEYWORD_NIL";
-        case TOKEN_KEYWORD_GUARD:
-            return "KEYWORD_GUARD";
-        case TOKEN_KEYWORD_THEN:
-            return "KEYWORD_THEN";
+        // Logical operators as keywords
+        case TOKEN_KEYWORD_AND:
+            return "KEYWORD_AND";
+        case TOKEN_KEYWORD_OR:
+            return "KEYWORD_OR";
+        case TOKEN_KEYWORD_NOT:
+            return "KEYWORD_NOT";
         case TOKEN_AND:
             return "AND";
         case TOKEN_OR:
@@ -880,8 +876,6 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "DOUBLE_AT";
         case TOKEN_WALRUS:
             return "WALRUS";
-        case TOKEN_POWER_EQUAL:
-            return "POWER_EQUAL";
         case TOKEN_COMMENT:
             return "COMMENT";
         case TOKEN_NEWLINE:

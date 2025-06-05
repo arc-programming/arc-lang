@@ -122,18 +122,20 @@ typedef enum {
     BINARY_OP_MUL,  // *
     BINARY_OP_DIV,  // /
     BINARY_OP_MOD,  // %
+    BINARY_OP_POW,  // **
 
     // Comparison
-    BINARY_OP_EQ,  // ==
-    BINARY_OP_NE,  // !=
-    BINARY_OP_LT,  // <
-    BINARY_OP_LE,  // <=
-    BINARY_OP_GT,  // >
-    BINARY_OP_GE,  // >=
+    BINARY_OP_EQ,         // ==
+    BINARY_OP_NE,         // !=
+    BINARY_OP_LT,         // <
+    BINARY_OP_LE,         // <=
+    BINARY_OP_GT,         // >
+    BINARY_OP_GE,         // >=
+    BINARY_OP_SPACESHIP,  // <=>
 
     // Logical
-    BINARY_OP_AND,  // &&
-    BINARY_OP_OR,   // ||
+    BINARY_OP_AND,  // &&, and
+    BINARY_OP_OR,   // ||, or
 
     // Bitwise
     BINARY_OP_BIT_AND,  // &
@@ -142,21 +144,37 @@ typedef enum {
     BINARY_OP_BIT_SHL,  // <<
     BINARY_OP_BIT_SHR,  // >>
 
+    // Special Arc operators
+    BINARY_OP_PIPELINE,          // |>
+    BINARY_OP_ASYNC_PIPELINE,    // ~>
+    BINARY_OP_REVERSE_PIPELINE,  // <|
+    BINARY_OP_NULL_COALESCING,   // ??
+    BINARY_OP_SCOPE_RESOLUTION,  // ::
+
     // Assignment
     BINARY_OP_ASSIGN,      // =
+    BINARY_OP_WALRUS,      // :=
     BINARY_OP_ADD_ASSIGN,  // +=
     BINARY_OP_SUB_ASSIGN,  // -=
     BINARY_OP_MUL_ASSIGN,  // *=
     BINARY_OP_DIV_ASSIGN,  // /=
     BINARY_OP_MOD_ASSIGN,  // %=
+    BINARY_OP_POW_ASSIGN,  // **=
+    BINARY_OP_AND_ASSIGN,  // &=
+    BINARY_OP_OR_ASSIGN,   // |=
+    BINARY_OP_XOR_ASSIGN,  // ^=
+    BINARY_OP_SHL_ASSIGN,  // <<=
+    BINARY_OP_SHR_ASSIGN,  // >>=
 } ArcBinaryOperator;
 
 // --- Unary Operators ---
 typedef enum {
-    UNARY_OP_NOT,          // !
-    UNARY_OP_NEGATE,       // -
-    UNARY_OP_ADDRESS,      // &
-    UNARY_OP_DEREFERENCE,  // *
+    UNARY_OP_NOT,           // !
+    UNARY_OP_NEGATE,        // -
+    UNARY_OP_ADDRESS,       // &
+    UNARY_OP_DEREFERENCE,   // *
+    UNARY_OP_LOGICAL_NOT,   // not
+    UNARY_OP_FORCE_UNWRAP,  // !!
 } ArcUnaryOperator;
 
 // --- AST Node Structure ---

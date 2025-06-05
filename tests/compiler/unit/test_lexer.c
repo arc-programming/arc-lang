@@ -62,14 +62,14 @@ void test_lexer_keywords(void) {
     printf("Testing keywords...\n");
 
     // Test function-related keywords
-    verify_single_token("fn", TOKEN_KEYWORD_FN, "fn");
+    verify_single_token("func", TOKEN_KEYWORD_FUNC, "func");
     verify_single_token("return", TOKEN_KEYWORD_RETURN, "return");
     verify_single_token("extern", TOKEN_KEYWORD_EXTERN, "extern");
     verify_single_token("export", TOKEN_KEYWORD_EXPORT, "export");
     verify_single_token("inline", TOKEN_KEYWORD_INLINE, "inline");
 
     // Test variable keywords
-    verify_single_token("var", TOKEN_KEYWORD_VAR, "var");
+    verify_single_token("let", TOKEN_KEYWORD_LET, "let");
     verify_single_token("const", TOKEN_KEYWORD_CONST, "const");
 
     // Test type keywords
@@ -92,7 +92,7 @@ void test_lexer_keywords(void) {
     // Test literals
     verify_single_token("true", TOKEN_KEYWORD_TRUE, "true");
     verify_single_token("false", TOKEN_KEYWORD_FALSE, "false");
-    verify_single_token("null", TOKEN_KEYWORD_NULL, "null");
+    verify_single_token("nil", TOKEN_KEYWORD_NIL, "nil");
 
     // Test Arc-specific keywords
     verify_single_token("comptime", TOKEN_KEYWORD_COMPTIME, "comptime");
@@ -216,7 +216,7 @@ void test_lexer_comments(void) {
     arc_lexer_init(&lexer, "fn main() { // comment\n return 42; }", "test");
 
     ArcToken token = arc_lexer_next_token(&lexer);
-    ARC_TEST_ASSERT_TOKEN_TYPE(TOKEN_KEYWORD_FN, token.type);
+    ARC_TEST_ASSERT_TOKEN_TYPE(TOKEN_KEYWORD_FUNC, token.type);
 
     token = get_next_token_skip_whitespace(&lexer);
     ARC_TEST_ASSERT_TOKEN_TYPE(TOKEN_IDENTIFIER, token.type);
