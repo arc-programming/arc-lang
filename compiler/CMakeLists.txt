@@ -6,7 +6,7 @@ set(COMPILER_EXECUTABLE_NAME arc)
 # --- Source Files ---
 # Separate library sources from main
 set(COMPILER_LIB_SOURCES
-    src/common.cpp
+    src/common.c
     src/lexer.c
     src/parser.c
     src/semantic.c

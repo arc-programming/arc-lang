@@ -150,57 +150,104 @@ ArcToken arc_lexer_next_token(ArcLexer *lexer) {
         case ';':
             return make_token(lexer, TOKEN_SEMICOLON, token_start, token_loc);
         case '*':
+            if (peek(lexer) == '=') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_ASTERISK_EQUAL, token_start, token_loc);
+            } else if (peek(lexer) == '*') {
+                advance(lexer);
+                if (peek(lexer) == '=') {
+                    advance(lexer);
+                    return make_token(lexer, TOKEN_POWER_EQUAL, token_start, token_loc);
+                }
+                return make_token(lexer, TOKEN_POWER, token_start, token_loc);
+            }
             return make_token(lexer, TOKEN_ASTERISK, token_start, token_loc);
         case '%':
+            if (peek(lexer) == '=') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_PERCENT_EQUAL, token_start, token_loc);
+            }
             return make_token(lexer, TOKEN_PERCENT, token_start, token_loc);
         case '?':
+            if (peek(lexer) == '?') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_NULL_COALESCING, token_start, token_loc);
+            }
             return make_token(lexer, TOKEN_QUESTION, token_start, token_loc);
         case ':':
             if (peek(lexer) == ':') {
                 advance(lexer);  // consume second ':'
                 return make_token(lexer, TOKEN_DOUBLE_COLON, token_start, token_loc);
+            } else if (peek(lexer) == '=') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_WALRUS, token_start, token_loc);
             }
             return make_token(lexer, TOKEN_COLON, token_start, token_loc);
         case '@':
+            if (peek(lexer) == '@') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_DOUBLE_AT, token_start, token_loc);
+            }
             return make_token(lexer, TOKEN_AT, token_start, token_loc);
         case '#':
             return make_token(lexer, TOKEN_HASH, token_start, token_loc);
         case '~':
+            if (peek(lexer) == '>') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_ASYNC_PIPELINE, token_start, token_loc);
+            }
             return make_token(lexer, TOKEN_TILDE, token_start, token_loc);
         case '\n':
             return make_token(lexer, TOKEN_NEWLINE, token_start, token_loc);
 
-        // Handle two-character tokens and single-character alternatives
-        case '!':
+            // Handle two-character tokens and single-character alternatives        case '!':
             if (peek(lexer) == '=') {
                 advance(lexer);
                 return make_token(lexer, TOKEN_BANG_EQUAL, token_start, token_loc);
+            } else if (peek(lexer) == '!') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_FORCE_UNWRAP, token_start, token_loc);
             }
             return make_token(lexer, TOKEN_BANG, token_start, token_loc);
-
         case '=':
             if (peek(lexer) == '=') {
                 advance(lexer);
                 return make_token(lexer, TOKEN_EQUAL_EQUAL, token_start, token_loc);
+            } else if (peek(lexer) == '>') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_FUNCTION_ARROW, token_start, token_loc);
             }
             return make_token(lexer, TOKEN_EQUAL, token_start, token_loc);
-
         case '<':
             if (peek(lexer) == '=') {
                 advance(lexer);
+                if (peek(lexer) == '>') {
+                    advance(lexer);
+                    return make_token(lexer, TOKEN_SPACESHIP, token_start, token_loc);
+                }
                 return make_token(lexer, TOKEN_LESS_EQUAL, token_start, token_loc);
             } else if (peek(lexer) == '<') {
                 advance(lexer);
+                if (peek(lexer) == '=') {
+                    advance(lexer);
+                    return make_token(lexer, TOKEN_LEFT_SHIFT_EQUAL, token_start, token_loc);
+                }
                 return make_token(lexer, TOKEN_LEFT_SHIFT, token_start, token_loc);
+            } else if (peek(lexer) == '|') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_REVERSE_PIPELINE, token_start, token_loc);
             }
             return make_token(lexer, TOKEN_LESS, token_start, token_loc);
-
         case '>':
             if (peek(lexer) == '=') {
                 advance(lexer);
                 return make_token(lexer, TOKEN_GREATER_EQUAL, token_start, token_loc);
             } else if (peek(lexer) == '>') {
                 advance(lexer);
+                if (peek(lexer) == '=') {
+                    advance(lexer);
+                    return make_token(lexer, TOKEN_RIGHT_SHIFT_EQUAL, token_start, token_loc);
+                }
                 return make_token(lexer, TOKEN_RIGHT_SHIFT, token_start, token_loc);
             }
             return make_token(lexer, TOKEN_GREATER, token_start, token_loc);
@@ -267,7 +314,6 @@ ArcToken arc_lexer_next_token(ArcLexer *lexer) {
                 return arc_lexer_next_token(lexer);
             }
             return make_token(lexer, TOKEN_SLASH, token_start, token_loc);
-
         case '|':
             if (peek(lexer) == '|') {
                 advance(lexer);
@@ -278,6 +324,9 @@ ArcToken arc_lexer_next_token(ArcLexer *lexer) {
             } else if (peek(lexer) == '=') {
                 advance(lexer);
                 return make_token(lexer, TOKEN_PIPE_EQUAL, token_start, token_loc);
+            } else if (peek(lexer) == '<') {
+                advance(lexer);
+                return make_token(lexer, TOKEN_COMPOSITION, token_start, token_loc);
             }
             return make_token(lexer, TOKEN_PIPE, token_start, token_loc);
 
@@ -490,39 +539,55 @@ static ArcTokenType check_keyword(const char *start, size_t length) {
                     {"enum", TOKEN_KEYWORD_ENUM},
                     {"interface", TOKEN_KEYWORD_INTERFACE},
                     {"impl", TOKEN_KEYWORD_IMPL},
-                    {"fn", TOKEN_KEYWORD_FN},
+                    {"func", TOKEN_KEYWORD_FUNC},
                     {"const", TOKEN_KEYWORD_CONST},
                     {"let", TOKEN_KEYWORD_LET},
-                    {"var", TOKEN_KEYWORD_VAR},
+                    {"mut", TOKEN_KEYWORD_MUT},
                     {"if", TOKEN_KEYWORD_IF},
-                    {"else_if", TOKEN_KEYWORD_ELSE_IF},
+                    {"elif", TOKEN_KEYWORD_ELIF},
                     {"else", TOKEN_KEYWORD_ELSE},
                     {"while", TOKEN_KEYWORD_WHILE},
                     {"for", TOKEN_KEYWORD_FOR},
                     {"in", TOKEN_KEYWORD_IN},
                     {"match", TOKEN_KEYWORD_MATCH},
+                    {"when", TOKEN_KEYWORD_WHEN},
                     {"break", TOKEN_KEYWORD_BREAK},
                     {"continue", TOKEN_KEYWORD_CONTINUE},
                     {"return", TOKEN_KEYWORD_RETURN},
+                    {"yield", TOKEN_KEYWORD_YIELD},
                     {"defer", TOKEN_KEYWORD_DEFER},
                     {"comptime", TOKEN_KEYWORD_COMPTIME},
                     {"stream", TOKEN_KEYWORD_STREAM},
+                    {"phantom", TOKEN_KEYWORD_PHANTOM},
+                    {"context", TOKEN_KEYWORD_CONTEXT},
+                    {"using", TOKEN_KEYWORD_USING},
+                    {"with", TOKEN_KEYWORD_WITH},
+                    {"grant", TOKEN_KEYWORD_GRANT},
+                    {"revoke", TOKEN_KEYWORD_REVOKE},
+                    {"pipeline", TOKEN_KEYWORD_PIPELINE},
+                    {"async", TOKEN_KEYWORD_ASYNC},
+                    {"await", TOKEN_KEYWORD_AWAIT},
+                    {"sync", TOKEN_KEYWORD_SYNC},
                     {"capability", TOKEN_KEYWORD_CAPABILITY},
                     {"phantom_resource", TOKEN_KEYWORD_PHANTOM_RESOURCE},
                     {"true", TOKEN_KEYWORD_TRUE},
                     {"false", TOKEN_KEYWORD_FALSE},
-                    {"null", TOKEN_KEYWORD_NULL},
-                    {"using", TOKEN_KEYWORD_USING},
+                    {"nil", TOKEN_KEYWORD_NIL},
+                    {"void", TOKEN_KEYWORD_VOID},
                     {"with_context", TOKEN_KEYWORD_WITH_CONTEXT},
-                    {"context", TOKEN_KEYWORD_CONTEXT},
                     {"extern", TOKEN_KEYWORD_EXTERN},
                     {"export", TOKEN_KEYWORD_EXPORT},
                     {"inline", TOKEN_KEYWORD_INLINE},
                     {"union", TOKEN_KEYWORD_UNION},
-                    {"phantom", TOKEN_KEYWORD_PHANTOM},
                     {"orelse", TOKEN_KEYWORD_ORELSE},
                     {"catch", TOKEN_KEYWORD_CATCH},
                     {"try", TOKEN_KEYWORD_TRY},
+                    {"guard", TOKEN_KEYWORD_GUARD},
+                    {"then", TOKEN_KEYWORD_THEN},
+                    {"and", TOKEN_AND},
+                    {"or", TOKEN_OR},
+                    {"not", TOKEN_NOT},
+                    // Legacy keywords for backward compatibility
                     // Primitive types
                     {"i8", TOKEN_KEYWORD_I8},
                     {"i16", TOKEN_KEYWORD_I16},
@@ -669,18 +734,16 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "KEYWORD_INTERFACE";
         case TOKEN_KEYWORD_IMPL:
             return "KEYWORD_IMPL";
-        case TOKEN_KEYWORD_FN:
-            return "KEYWORD_FN";
+        case TOKEN_KEYWORD_FUNC:
+            return "KEYWORD_FUNC";
         case TOKEN_KEYWORD_CONST:
             return "KEYWORD_CONST";
         case TOKEN_KEYWORD_LET:
             return "KEYWORD_LET";
-        case TOKEN_KEYWORD_VAR:
-            return "KEYWORD_VAR";
         case TOKEN_KEYWORD_IF:
             return "KEYWORD_IF";
-        case TOKEN_KEYWORD_ELSE_IF:
-            return "KEYWORD_ELSE_IF";
+        case TOKEN_KEYWORD_ELIF:
+            return "KEYWORD_ELIF";
         case TOKEN_KEYWORD_ELSE:
             return "KEYWORD_ELSE";
         case TOKEN_KEYWORD_WHILE:
@@ -711,8 +774,6 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "KEYWORD_TRUE";
         case TOKEN_KEYWORD_FALSE:
             return "KEYWORD_FALSE";
-        case TOKEN_KEYWORD_NULL:
-            return "KEYWORD_NULL";
         case TOKEN_KEYWORD_USING:
             return "KEYWORD_USING";
         case TOKEN_KEYWORD_WITH_CONTEXT:
@@ -766,6 +827,61 @@ const char *arc_token_type_to_string(ArcTokenType type) {
             return "KEYWORD_CHAR";
         case TOKEN_KEYWORD_VOID:
             return "KEYWORD_VOID";
+        // New tokens
+        case TOKEN_KEYWORD_MUT:
+            return "KEYWORD_MUT";
+        case TOKEN_KEYWORD_WHEN:
+            return "KEYWORD_WHEN";
+        case TOKEN_KEYWORD_YIELD:
+            return "KEYWORD_YIELD";
+        case TOKEN_KEYWORD_WITH:
+            return "KEYWORD_WITH";
+        case TOKEN_KEYWORD_GRANT:
+            return "KEYWORD_GRANT";
+        case TOKEN_KEYWORD_REVOKE:
+            return "KEYWORD_REVOKE";
+        case TOKEN_KEYWORD_PIPELINE:
+            return "KEYWORD_PIPELINE";
+        case TOKEN_KEYWORD_ASYNC:
+            return "KEYWORD_ASYNC";
+        case TOKEN_KEYWORD_AWAIT:
+            return "KEYWORD_AWAIT";
+        case TOKEN_KEYWORD_SYNC:
+            return "KEYWORD_SYNC";
+        case TOKEN_KEYWORD_NIL:
+            return "KEYWORD_NIL";
+        case TOKEN_KEYWORD_GUARD:
+            return "KEYWORD_GUARD";
+        case TOKEN_KEYWORD_THEN:
+            return "KEYWORD_THEN";
+        case TOKEN_AND:
+            return "AND";
+        case TOKEN_OR:
+            return "OR";
+        case TOKEN_NOT:
+            return "NOT";
+        case TOKEN_ASYNC_PIPELINE:
+            return "ASYNC_PIPELINE";
+        case TOKEN_REVERSE_PIPELINE:
+            return "REVERSE_PIPELINE";
+        case TOKEN_COMPOSITION:
+            return "COMPOSITION";
+        case TOKEN_FUNCTION_ARROW:
+            return "FUNCTION_ARROW";
+        case TOKEN_NULL_COALESCING:
+            return "NULL_COALESCING";
+        case TOKEN_FORCE_UNWRAP:
+            return "FORCE_UNWRAP";
+        case TOKEN_SPACESHIP:
+            return "SPACESHIP";
+        case TOKEN_POWER:
+            return "POWER";
+        case TOKEN_DOUBLE_AT:
+            return "DOUBLE_AT";
+        case TOKEN_WALRUS:
+            return "WALRUS";
+        case TOKEN_POWER_EQUAL:
+            return "POWER_EQUAL";
         case TOKEN_COMMENT:
             return "COMMENT";
         case TOKEN_NEWLINE:

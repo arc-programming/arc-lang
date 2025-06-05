@@ -11,7 +11,6 @@
 
 // Platform-specific includes and definitions
 #ifdef _WIN32
-#include <windows.h>
 #define PATH_SEPARATOR '\\'
 #define PATH_SEPARATOR_STR "\\"
 #else

@@ -31,34 +31,46 @@ typedef enum {
     TOKEN_LESS,
     TOKEN_LESS_EQUAL,  // < <=
     TOKEN_PIPE,
-    TOKEN_PIPE_PIPE,  // | || (for pipeline and logical OR)
+    TOKEN_PIPE_PIPE,  // || (logical OR - legacy)
     TOKEN_AMPERSAND,
-    TOKEN_AMPERSAND_AMPERSAND,  // & && (bitwise and logical AND)
+    TOKEN_AMPERSAND_AMPERSAND,  // && (logical AND - legacy)
+    TOKEN_AND,                  // and (logical AND)
+    TOKEN_OR,                   // or (logical OR)
+    TOKEN_NOT,                  // not (logical NOT)
     TOKEN_CARET,                // ^ (bitwise XOR, or pointer type)
     TOKEN_QUESTION,             // ? (optional types/pointers)
     TOKEN_COLON,                // :
     TOKEN_DOUBLE_COLON,         // :: (module path separator)
     TOKEN_ARROW,                // -> (function return, pipeline)
     TOKEN_PIPELINE,             // |> (pipeline operator)
+    TOKEN_ASYNC_PIPELINE,       // ~> (async pipeline)
+    TOKEN_REVERSE_PIPELINE,     // <| (reverse pipeline)
+    TOKEN_COMPOSITION,          // |< (composition)
+    TOKEN_FUNCTION_ARROW,       // => (function arrow)
+    TOKEN_NULL_COALESCING,      // ?? (null coalescing)
+    TOKEN_FORCE_UNWRAP,         // !! (force unwrap)
+    TOKEN_SPACESHIP,            // <=> (spaceship operator)
+    TOKEN_POWER,                // ** (power operator)
+    TOKEN_DOUBLE_AT,            // @@ (attribute application)
     TOKEN_DOT_DOT,              // .. (range)
     TOKEN_DOT_DOT_DOT,          // ... (variadic/spread)
     TOKEN_LEFT_SHIFT,           // <<
     TOKEN_RIGHT_SHIFT,          // >>
     TOKEN_AT,                   // @ (attribute marker)
     TOKEN_HASH,                 // # (hash/pound)
-    TOKEN_TILDE,                // ~ (bitwise NOT)
-
-    // Compound assignment operators
-    TOKEN_PLUS_EQUAL,         // +=
-    TOKEN_MINUS_EQUAL,        // -=
-    TOKEN_ASTERISK_EQUAL,     // *=
-    TOKEN_SLASH_EQUAL,        // /=
-    TOKEN_PERCENT_EQUAL,      // %=
-    TOKEN_AMPERSAND_EQUAL,    // &=
-    TOKEN_PIPE_EQUAL,         // |=
-    TOKEN_CARET_EQUAL,        // ^=
-    TOKEN_LEFT_SHIFT_EQUAL,   // <<=
-    TOKEN_RIGHT_SHIFT_EQUAL,  // >>>
+    TOKEN_TILDE,                // ~ (bitwise NOT)    // Compound assignment operators
+    TOKEN_WALRUS,               // := (walrus operator)
+    TOKEN_PLUS_EQUAL,           // +=
+    TOKEN_MINUS_EQUAL,          // -=
+    TOKEN_ASTERISK_EQUAL,       // *=
+    TOKEN_SLASH_EQUAL,          // /=
+    TOKEN_PERCENT_EQUAL,        // %=
+    TOKEN_POWER_EQUAL,          // **=
+    TOKEN_AMPERSAND_EQUAL,      // &=
+    TOKEN_PIPE_EQUAL,           // |=
+    TOKEN_CARET_EQUAL,          // ^=
+    TOKEN_LEFT_SHIFT_EQUAL,     // <<=
+    TOKEN_RIGHT_SHIFT_EQUAL,    // >>=
 
     // Literals
     TOKEN_IDENTIFIER,
@@ -74,40 +86,51 @@ typedef enum {
     TOKEN_KEYWORD_ENUM,
     TOKEN_KEYWORD_INTERFACE,
     TOKEN_KEYWORD_IMPL,
-    TOKEN_KEYWORD_FN,
+    TOKEN_KEYWORD_FUNC,
     TOKEN_KEYWORD_CONST,
     TOKEN_KEYWORD_LET,
-    TOKEN_KEYWORD_VAR,
+    TOKEN_KEYWORD_MUT,
     TOKEN_KEYWORD_IF,
-    TOKEN_KEYWORD_ELSE_IF,
+    TOKEN_KEYWORD_ELIF,
     TOKEN_KEYWORD_ELSE,
     TOKEN_KEYWORD_WHILE,
     TOKEN_KEYWORD_FOR,
     TOKEN_KEYWORD_IN,
     TOKEN_KEYWORD_MATCH,
+    TOKEN_KEYWORD_WHEN,
     TOKEN_KEYWORD_BREAK,
     TOKEN_KEYWORD_CONTINUE,
     TOKEN_KEYWORD_RETURN,
+    TOKEN_KEYWORD_YIELD,
     TOKEN_KEYWORD_DEFER,
     TOKEN_KEYWORD_COMPTIME,
     TOKEN_KEYWORD_STREAM,
+    TOKEN_KEYWORD_PHANTOM,
+    TOKEN_KEYWORD_CONTEXT,
+    TOKEN_KEYWORD_USING,
+    TOKEN_KEYWORD_WITH,
+    TOKEN_KEYWORD_GRANT,
+    TOKEN_KEYWORD_REVOKE,
+    TOKEN_KEYWORD_PIPELINE,
+    TOKEN_KEYWORD_ASYNC,
+    TOKEN_KEYWORD_AWAIT,
+    TOKEN_KEYWORD_SYNC,
     TOKEN_KEYWORD_CAPABILITY,
     TOKEN_KEYWORD_PHANTOM_RESOURCE,
     TOKEN_KEYWORD_TRUE,
     TOKEN_KEYWORD_FALSE,
-    TOKEN_KEYWORD_NULL,
-    TOKEN_KEYWORD_USING,
-    TOKEN_KEYWORD_WITH_CONTEXT,  // For context injection
-    TOKEN_KEYWORD_CONTEXT,       // For context definitions
+    TOKEN_KEYWORD_NIL,
+    TOKEN_KEYWORD_VOID,
+    TOKEN_KEYWORD_WITH_CONTEXT,  // For context injection (deprecated)
     TOKEN_KEYWORD_EXTERN,        // For C FFI
     TOKEN_KEYWORD_EXPORT,        // For exporting to C
     TOKEN_KEYWORD_INLINE,        // For inline functions
     TOKEN_KEYWORD_UNION,         // Union types
-    TOKEN_KEYWORD_PHANTOM,       // For phantom resources
-    TOKEN_KEYWORD_ORELSE,        // For optional
-                                 // handling
+    TOKEN_KEYWORD_ORELSE,        // For optional handling
     TOKEN_KEYWORD_CATCH,         // For error handling
     TOKEN_KEYWORD_TRY,           // For error propagation
+    TOKEN_KEYWORD_GUARD,         // Guard statements
+    TOKEN_KEYWORD_THEN,          // Expression conditions
 
     // Primitive type keywords
     TOKEN_KEYWORD_I8,
@@ -124,7 +147,8 @@ typedef enum {
     TOKEN_KEYWORD_F64,
     TOKEN_KEYWORD_BOOL,
     TOKEN_KEYWORD_CHAR,
-    TOKEN_KEYWORD_VOID,
+
+    // Legacy tokens (for backward compatibility)
 
     // Special tokens
     TOKEN_COMMENT,     // Usually skipped, but can be useful for tools
