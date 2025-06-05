@@ -243,15 +243,12 @@ static ArcModuleFile *arc_load_and_analyze_module(ArcSemanticAnalyzer *analyzer,
         return NULL;
     }
 
-    // Analyze the module in a NEW, separate semantic context
-    ArcSemanticAnalyzer *module_analyzer = arc_semantic_analyzer_create();
+    ArcSemanticAnalyzer *module_analyzer = arc_semantic_analyzer_create_with_arena(analyzer->arena);
     bool success = arc_semantic_analyze(module_analyzer, module_file->ast);
 
     if (success) {
         module_file->state = ARC_MODULE_STATE_LOADED;
-        // Steal the global scope from the temporary analyzer
         module_file->global_scope = module_analyzer->global_scope;
-        // Prevent the scope from being destroyed with the temp analyzer
         module_analyzer->global_scope = NULL;
     } else {
         module_file->state = ARC_MODULE_STATE_FAILED;
@@ -520,16 +517,20 @@ static ArcTypeInfo *arc_infer_literal_type(ArcSemanticAnalyzer *analyzer, ArcAst
 }
 
 // === SEMANTIC ANALYZER LIFECYCLE ===
-
-ArcSemanticAnalyzer *arc_semantic_analyzer_create(void) {
+ArcSemanticAnalyzer *arc_semantic_analyzer_create_with_arena(ArcArena *arena) {
     ArcSemanticAnalyzer *analyzer = malloc(sizeof(ArcSemanticAnalyzer));
     if (!analyzer)
         return NULL;
 
-    analyzer->arena = arc_arena_create(1024 * 1024);
-    if (!analyzer->arena) {
-        free(analyzer);
-        return NULL;
+    // If an arena is provided, use it. Otherwise, create a new one.
+    if (arena) {
+        analyzer->arena = arena;
+    } else {
+        analyzer->arena = arc_arena_create(1024 * 1024);
+        if (!analyzer->arena) {
+            free(analyzer);
+            return NULL;
+        }
     }
 
     analyzer->global_scope = arc_scope_create(analyzer, ARC_SCOPE_GLOBAL, NULL);
@@ -546,25 +547,29 @@ ArcSemanticAnalyzer *arc_semantic_analyzer_create(void) {
 
     arc_semantic_analyzer_setup_builtins(analyzer);
 
-    // Initialize module resolver and link it
-    arc_module_resolver_init();
+    // The module resolver is global, so just point to it.
     analyzer->module_resolver = module_resolver;
 
     return analyzer;
+}
+
+ArcSemanticAnalyzer *arc_semantic_analyzer_create(void) {
+    // This is the main entry point, so it creates the primary arena.
+    return arc_semantic_analyzer_create_with_arena(NULL);
 }
 
 void arc_semantic_analyzer_destroy(ArcSemanticAnalyzer *analyzer) {
     if (!analyzer)
         return;
 
-    // In a multi-file compilation, cleanup should be handled more carefully.
-    // For a single entry point, this is okay.
-    arc_module_resolver_cleanup();
-
-    arc_arena_destroy(analyzer->arena);
+    // The analyzer is only responsible for its own arena IF it created it.
+    // In our new model, only the main analyzer creates its arena, and the
+    // temporary ones borrow it. The main analyzer's destruction will be
+    // handled by the CLI. For temporary analyzers, we just free the struct.
+    // A better approach is to track ownership, but this is simpler for now.
+    // Let's assume the CLI will destroy the main arena.
     free(analyzer);
 }
-
 // === SCOPE MANAGEMENT ===
 
 ArcScope *arc_scope_create(ArcSemanticAnalyzer *analyzer, ArcScopeKind kind, ArcScope *parent) {

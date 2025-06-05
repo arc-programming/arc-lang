@@ -152,6 +152,7 @@ typedef struct ArcSemanticAnalyzer {
 // === PUBLIC API ===
 
 // Analyzer lifecycle
+ArcSemanticAnalyzer *arc_semantic_analyzer_create_with_arena(ArcArena *arena);
 ArcSemanticAnalyzer *arc_semantic_analyzer_create(void);
 void arc_semantic_analyzer_destroy(ArcSemanticAnalyzer *analyzer);
 

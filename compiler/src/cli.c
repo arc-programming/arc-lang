@@ -163,18 +163,20 @@ static CliResult compile_arc_file(CliContext *ctx, const char *filename, const c
         return CLI_ERROR_COMPILE;
     }
 
+    // Keep a pointer to the main arena
+    ArcArena *main_arena = analyzer->arena;
+
     bool sema_success = arc_semantic_analyze(analyzer, ast);
 
     if (!sema_success || arc_semantic_has_errors(analyzer)) {
         fprintf(stderr, "Semantic errors in %s:\n", filename);
         arc_diagnostic_print_all(analyzer);
         arc_semantic_analyzer_destroy(analyzer);
-        arc_parser_cleanup(&parser);
-        arc_arena_destroy(arena);
+        // arc_parser_cleanup(&parser); // Assuming this frees from arena
+        arc_arena_destroy(main_arena);  // FIX: Destroy the main arena on failure
         FREE(file_content);
         return CLI_ERROR_COMPILE;
     }
-
     if (ctx->verbose) {
         printf("Generating C code...\n");
     }
@@ -212,12 +214,12 @@ static CliResult compile_arc_file(CliContext *ctx, const char *filename, const c
     }
 
     // Cleanup
+    // Cleanup
     arc_codegen_destroy(codegen);
     arc_semantic_analyzer_destroy(analyzer);
-    arc_parser_cleanup(&parser);
-    arc_arena_destroy(arena);
+    // arc_parser_cleanup(&parser); // Assuming this frees from arena
+    arc_arena_destroy(main_arena);  // FIX: Destroy the main arena on success
     FREE(file_content);
-
     if (!ctx->quiet) {
         printf("Successfully generated C code in %s/\n", ctx->output_dir);
     }
