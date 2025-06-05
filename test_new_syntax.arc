@@ -12,9 +12,24 @@ func hello() {
     }
 }
 
+
 let value: i32 = 42
 const PI = 3.14159
 
 func add(a: i32, b: i32) -> i32 {
     return a + b
 }
+
+let wrong_type: i32 = "string"  
+let bad_math = 42 + "text"     
+
+let undefined_var = missing_var  
+
+let result = add(42)            
+let bad_call = nonexistent()
+let type_error = add("a", "b")
+
+
+let invalid_op = true && 42
+let bad_compare = "hello" > 100
+

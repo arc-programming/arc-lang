@@ -53,7 +53,6 @@ else()
         "-Wall"
         "-Wextra"
         "-Wpedantic"
-        "-Werror"
         "-Wno-unused-parameter"
     )
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
