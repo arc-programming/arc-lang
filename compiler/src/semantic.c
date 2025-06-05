@@ -286,9 +286,22 @@ static ArcModuleFile *arc_load_and_analyze_module(ArcSemanticAnalyzer *analyzer,
     ArcLexer lexer;
     ArcParser parser;
     arc_lexer_init(&lexer, module_file->content, module_file->filepath);
-    arc_parser_init_simple(&parser, &lexer);
+
+    // FIX: Initialize the parser with the main analyzer's shared arena
+    arc_parser_init(&parser, &lexer, analyzer->arena);
+
     module_file->ast = arc_parser_parse_program(&parser);
-    // TODO: Check for and handle parser errors
+
+    // Check for parser errors before continuing
+    if (arc_parser_had_error(&parser)) {
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, import_site,
+                           "Failed to parse module '%s'.", module_name);
+        // You might want to propagate parser diagnostics here as well
+        arc_parser_cleanup(&parser);
+        module_file->state = ARC_MODULE_STATE_FAILED;
+        return NULL;
+    }
+
     arc_parser_cleanup(&parser);
 
     if (!module_file->ast) {
