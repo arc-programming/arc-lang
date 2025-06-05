@@ -13,7 +13,7 @@ add_executable(compiler_tests
 
 # Set up include directories
 target_include_directories(compiler_tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/compiler/include/    # For arc/lexer.h, arc/common.h
+    ${CMAKE_SOURCE_DIR}/compiler/include/    # For arc/lexer.h, arc/common.hpp
     ${CMAKE_SOURCE_DIR}/tests/common/        # For test_framework.h
     ${unity_SOURCE_DIR}/src/                 # For unity.h
 )

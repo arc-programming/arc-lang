@@ -295,7 +295,7 @@ fn parse_expression(parser ^Parser) Result(Expression, ParseError) {
 #include <stddef.h>
 #include <stdbool.h>
 
-#include "arc/common.h"
+#include "arc/common.hpp"
 #include "arc/lexer.h"
 
 // Forward declarations
