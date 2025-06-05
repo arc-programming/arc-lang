@@ -10,6 +10,7 @@ typedef struct ArcSemanticAnalyzer ArcSemanticAnalyzer;
 typedef struct ArcSymbol ArcSymbol;
 typedef struct ArcScope ArcScope;
 typedef struct ArcTypeInfo ArcTypeInfo;
+typedef struct ArcModuleResolver ArcModuleResolver;
 
 // === SYMBOL SYSTEM ===
 
@@ -137,6 +138,7 @@ typedef struct ArcSemanticAnalyzer {
     ArcDiagnostic *last_diagnostic;
     size_t error_count;
     size_t warning_count;
+    ArcModuleResolver *module_resolver;
 
     // Memory management
     struct ArcArena *arena;

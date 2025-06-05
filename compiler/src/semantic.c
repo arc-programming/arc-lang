@@ -2,8 +2,9 @@
 #include "arc/semantic.h"
 #include "arc/lexer.h"
 #include "arc/parser.h"
-#include <limits.h>
 #include <stdarg.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,23 +25,34 @@ static bool arc_type_is_assignable(ArcTypeInfo *from, ArcTypeInfo *to);
 static ArcTypeInfo *arc_infer_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNode *expr);
 static bool arc_type_is_comparable(ArcTypeInfo *left, ArcTypeInfo *right);
 
-// === MODULE RESOLUTION SYSTEM ===
+// === MODULE RESOLUTION & IMPORT SYSTEM ===
+
+// State of a module during the loading process to detect circular dependencies.
+typedef enum {
+    ARC_MODULE_STATE_UNLOADED,  // Not yet processed
+    ARC_MODULE_STATE_LOADING,   // Currently being analyzed (for cycle detection)
+    ARC_MODULE_STATE_LOADED,    // Successfully analyzed
+    ARC_MODULE_STATE_FAILED,    // Analysis failed
+} ArcModuleFileState;
 
 typedef struct ArcModuleFile {
     char *filepath;
     char *content;
     ArcAstNode *ast;
     ArcScope *global_scope;  // The module's global scope containing its symbols
-    bool is_loaded;
+    ArcModuleFileState state;
     struct ArcModuleFile *next;
 } ArcModuleFile;
 
 // Module resolution context
-typedef struct {
+typedef struct ArcModuleResolver {
     ArcModuleFile *loaded_modules;  // Cache of loaded modules
     char **search_paths;            // Array of search paths for modules
     size_t search_path_count;
 } ArcModuleResolver;
+
+// Module resolver global instance
+static ArcModuleResolver *module_resolver = NULL;
 
 // Module system function declarations
 static void arc_module_resolver_init(void);
@@ -48,9 +60,213 @@ static void arc_module_resolver_cleanup(void);
 static ArcModuleFile *arc_module_resolve(const char *module_name);
 static char *arc_module_construct_path(const char *module_name);
 static char *arc_module_load_content(const char *filepath);
+static ArcModuleFile *arc_load_and_analyze_module(ArcSemanticAnalyzer *analyzer,
+                                                  const char *module_name,
+                                                  ArcSourceInfo import_site);
 
-// Module resolver global instance
-static ArcModuleResolver *module_resolver = NULL;
+// Initialize module resolver
+static void arc_module_resolver_init(void) {
+    if (module_resolver)
+        return;
+
+    module_resolver = malloc(sizeof(ArcModuleResolver));
+    if (module_resolver) {
+        module_resolver->loaded_modules = NULL;
+        module_resolver->search_paths = malloc(sizeof(char *) * 4);
+        module_resolver->search_path_count = 0;
+
+        // Add default search paths
+        if (module_resolver->search_paths) {
+            module_resolver->search_paths[module_resolver->search_path_count++] = ".";
+            module_resolver->search_paths[module_resolver->search_path_count++] = "./src";
+            module_resolver->search_paths[module_resolver->search_path_count++] = "./stdlib";
+        }
+    }
+}
+
+// Cleanup module resolver
+static void arc_module_resolver_cleanup(void) {
+    if (!module_resolver)
+        return;
+
+    ArcModuleFile *current = module_resolver->loaded_modules;
+    while (current) {
+        ArcModuleFile *next = current->next;
+        free(current->filepath);
+        free(current->content);
+        // AST and scope are managed by arenas, which should be cleaned up
+        // when their respective analyzers are destroyed.
+        free(current);
+        current = next;
+    }
+
+    free(module_resolver->search_paths);
+    free(module_resolver);
+    module_resolver = NULL;
+}
+
+// Construct module file path from module name
+static char *arc_module_construct_path(const char *module_name) {
+    if (!module_name || !module_resolver)
+        return NULL;
+
+    for (size_t i = 0; i < module_resolver->search_path_count; i++) {
+        size_t path_len = strlen(module_resolver->search_paths[i]) + strlen(module_name) + 10;
+        char *filepath = malloc(path_len);
+        if (!filepath)
+            continue;
+#ifdef _WIN32
+        snprintf(filepath, path_len, "%s\\%s.arc", module_resolver->search_paths[i], module_name);
+#else
+        snprintf(filepath, path_len, "%s/%s.arc", module_resolver->search_paths[i], module_name);
+#endif
+
+        FILE *file = fopen(filepath, "r");
+        if (file) {
+            fclose(file);
+            return filepath;
+        }
+        free(filepath);
+    }
+    return NULL;
+}
+
+// Load module content from file
+static char *arc_module_load_content(const char *filepath) {
+    FILE *file = fopen(filepath, "rb");  // Use "rb" for cross-platform consistency
+    if (!file)
+        return NULL;
+
+    fseek(file, 0, SEEK_END);
+    long size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    if (size <= 0) {
+        fclose(file);
+        return size == 0 ? strdup("") : NULL;
+    }
+
+    char *content = malloc(size + 1);
+    if (!content) {
+        fclose(file);
+        return NULL;
+    }
+
+    size_t read_size = fread(content, 1, size, file);
+    content[read_size] = '\0';
+    fclose(file);
+
+    return content;
+}
+
+// Find or load a module by name
+static ArcModuleFile *arc_module_resolve(const char *module_name) {
+    if (!module_name || !module_resolver)
+        return NULL;
+
+    // Check cache first
+    for (ArcModuleFile *mod = module_resolver->loaded_modules; mod; mod = mod->next) {
+        // A more robust check would be to have a canonical module name/path
+        if (strstr(mod->filepath, module_name)) {
+            return mod;
+        }
+    }
+
+    char *filepath = arc_module_construct_path(module_name);
+    if (!filepath)
+        return NULL;
+
+    char *content = arc_module_load_content(filepath);
+    if (!content) {
+        free(filepath);
+        return NULL;
+    }
+
+    ArcModuleFile *module_file = malloc(sizeof(ArcModuleFile));
+    if (!module_file) {
+        free(filepath);
+        free(content);
+        return NULL;
+    }
+
+    module_file->filepath = filepath;
+    module_file->content = content;
+    module_file->ast = NULL;
+    module_file->global_scope = NULL;
+    module_file->state = ARC_MODULE_STATE_UNLOADED;
+    module_file->next = module_resolver->loaded_modules;
+    module_resolver->loaded_modules = module_file;
+
+    return module_file;
+}
+
+// The core function to load, parse, and analyze a module.
+static ArcModuleFile *arc_load_and_analyze_module(ArcSemanticAnalyzer *analyzer,
+                                                  const char *module_name,
+                                                  ArcSourceInfo import_site) {
+    ArcModuleFile *module_file = arc_module_resolve(module_name);
+    if (!module_file) {
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, import_site, "Module '%s' not found.",
+                           module_name);
+        return NULL;
+    }
+
+    // Handle module state for caching and cycle detection
+    if (module_file->state == ARC_MODULE_STATE_LOADING) {
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, import_site,
+                           "Circular dependency detected: module '%s' is already being loaded.",
+                           module_name);
+        return NULL;
+    }
+    if (module_file->state == ARC_MODULE_STATE_LOADED) {
+        return module_file;  // Already analyzed, return cached result
+    }
+    if (module_file->state == ARC_MODULE_STATE_FAILED) {
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_NOTE, import_site,
+                           "Module '%s' failed to load in a previous attempt.", module_name);
+        return NULL;
+    }
+
+    module_file->state = ARC_MODULE_STATE_LOADING;  // Parse the module content into an AST
+    ArcLexer lexer;
+    ArcParser parser;
+    arc_lexer_init(&lexer, module_file->content, module_file->filepath);
+    arc_parser_init_simple(&parser, &lexer);
+    module_file->ast = arc_parser_parse_program(&parser);
+    // TODO: Check for and handle parser errors
+    arc_parser_cleanup(&parser);
+
+    if (!module_file->ast) {
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, import_site,
+                           "Failed to parse module '%s'.", module_name);
+        module_file->state = ARC_MODULE_STATE_FAILED;
+        return NULL;
+    }
+
+    // Analyze the module in a NEW, separate semantic context
+    ArcSemanticAnalyzer *module_analyzer = arc_semantic_analyzer_create();
+    bool success = arc_semantic_analyze(module_analyzer, module_file->ast);
+
+    if (success) {
+        module_file->state = ARC_MODULE_STATE_LOADED;
+        // Steal the global scope from the temporary analyzer
+        module_file->global_scope = module_analyzer->global_scope;
+        // Prevent the scope from being destroyed with the temp analyzer
+        module_analyzer->global_scope = NULL;
+    } else {
+        module_file->state = ARC_MODULE_STATE_FAILED;
+        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, import_site,
+                           "Errors found while analyzing module '%s'. See details below.",
+                           module_name);
+        // Propagate diagnostics from the module analyzer to the main one
+        for (ArcDiagnostic *d = module_analyzer->diagnostics; d; d = d->next) {
+            arc_diagnostic_add(analyzer, d->level, d->source_info, d->message);
+        }
+    }
+
+    arc_semantic_analyzer_destroy(module_analyzer);
+    return success ? module_file : NULL;
+}
 
 // === ENHANCED TYPE SYSTEM HELPERS ===
 
@@ -268,15 +484,13 @@ static const char *arc_type_to_string(ArcTypeInfo *type) {
     }
 }
 
-#define INT32_MIN -2147483648
-#define INT32_MAX 2147483647
-
 // Enhanced expression type inference
 static ArcTypeInfo *arc_infer_literal_type(ArcSemanticAnalyzer *analyzer, ArcAstNode *expr) {
     switch (expr->type) {
         case AST_LITERAL_INT:
             // Enhanced integer literal inference based on value
-            if (expr->literal_int.value >= INT32_MIN && expr->literal_int.value <= INT32_MAX) {
+            if (expr->literal_int.value >= (-2147483647 - 1) &&
+                expr->literal_int.value <= 2147483647) {
                 return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_I32);
             } else {
                 return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_I64);
@@ -312,37 +526,29 @@ ArcSemanticAnalyzer *arc_semantic_analyzer_create(void) {
     if (!analyzer)
         return NULL;
 
-    // Initialize arena for memory management
-    analyzer->arena = arc_arena_create(1024 * 1024);  // 1MB arena
+    analyzer->arena = arc_arena_create(1024 * 1024);
     if (!analyzer->arena) {
         free(analyzer);
         return NULL;
     }
 
-    // Create global scope
     analyzer->global_scope = arc_scope_create(analyzer, ARC_SCOPE_GLOBAL, NULL);
     analyzer->current_scope = analyzer->global_scope;
-
-    // Initialize builtin types
     analyzer->builtin_types = NULL;
     analyzer->builtin_type_count = 0;
-
-    // Initialize diagnostics
     analyzer->diagnostics = NULL;
     analyzer->last_diagnostic = NULL;
     analyzer->error_count = 0;
     analyzer->warning_count = 0;
-
-    // Initialize context
     analyzer->current_function = NULL;
     analyzer->in_loop = false;
     analyzer->has_return = false;
 
-    // Setup builtin types
     arc_semantic_analyzer_setup_builtins(analyzer);
 
-    // Initialize module resolver
+    // Initialize module resolver and link it
     arc_module_resolver_init();
+    analyzer->module_resolver = module_resolver;
 
     return analyzer;
 }
@@ -351,11 +557,10 @@ void arc_semantic_analyzer_destroy(ArcSemanticAnalyzer *analyzer) {
     if (!analyzer)
         return;
 
-    // Cleanup module resolver on last analyzer destruction
-    // (This is a simplification - in a real system you'd want better lifecycle management)
+    // In a multi-file compilation, cleanup should be handled more carefully.
+    // For a single entry point, this is okay.
     arc_module_resolver_cleanup();
 
-    // Diagnostics are arena-allocated, so they'll be freed with the arena
     arc_arena_destroy(analyzer->arena);
     free(analyzer);
 }
@@ -1357,16 +1562,12 @@ bool arc_semantic_analyze(ArcSemanticAnalyzer *analyzer, ArcAstNode *ast) {
         arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, ast->source_info,
                            "Expected program node at top level");
         return false;
-    }  // Analyze all declarations in the program
+    }
     for (size_t i = 0; i < ast->program.declaration_count; i++) {
-        if (!arc_analyze_declaration(analyzer, ast->program.declarations[i])) {
-            // Continue analyzing other declarations even if one fails
-        }
+        arc_analyze_declaration(analyzer, ast->program.declarations[i]);
     }
 
-    // After analyzing all declarations, check for unused variables
     arc_check_unused_variables(analyzer);
-
     return !arc_semantic_has_errors(analyzer);
 }
 
@@ -1726,127 +1927,105 @@ bool arc_analyze_declaration(ArcSemanticAnalyzer *analyzer, ArcAstNode *decl) {
             return arc_scope_add_symbol(analyzer->current_scope, symbol);
         }
         case AST_DECL_USE: {
-            // Use declaration analysis (imports)
+            // --- START: REPLACEMENT OF TEMPORARY FIX ---
             if (!decl->use_decl.path) {
                 arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, decl->source_info,
                                    "Use declaration missing path");
                 return false;
             }
 
-            // Extract module name from path
-            char *module_name = NULL;
-            if (decl->use_decl.path->type == AST_IDENTIFIER) {
-                size_t name_len = decl->use_decl.path->identifier.token.length;
-                module_name = arc_arena_alloc(analyzer->arena, name_len + 1);
-                if (module_name) {
-                    strncpy(module_name, decl->use_decl.path->identifier.token.start, name_len);
-                    module_name[name_len] = '\0';
-                }
-            } else if (decl->use_decl.path->type == AST_EXPR_FIELD_ACCESS) {
-                // Handle module::submodule paths
-                // For now, just take the first part
-                if (decl->use_decl.path->field_access_expr.object &&
-                    decl->use_decl.path->field_access_expr.object->type == AST_IDENTIFIER) {
-                    size_t name_len =
-                        decl->use_decl.path->field_access_expr.object->identifier.token.length;
-                    module_name = arc_arena_alloc(analyzer->arena, name_len + 1);
-                    if (module_name) {
-                        strncpy(
-                            module_name,
-                            decl->use_decl.path->field_access_expr.object->identifier.token.start,
-                            name_len);
-                        module_name[name_len] = '\0';
-                    }
-                }
+            // For now, we only support simple `use <module_name>` paths.
+            if (decl->use_decl.path->type != AST_IDENTIFIER) {
+                arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, decl->source_info,
+                                   "Complex module paths are not yet supported.");
+                return false;
             }
 
-            if (!module_name) {
-                arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, decl->source_info,
-                                   "Could not extract module name from use path");
-                return false;
-            }  // TEMPORARY FIX: Skip module resolution to avoid infinite loops
-            // The module system implementation has recursive parsing issues
-            // For now, treat all modules as available but don't actually load them
-            arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_WARNING, decl->source_info,
-                               "Module '%s' import skipped (module system temporarily disabled)",
-                               module_name);
+            size_t name_len = decl->use_decl.path->identifier.token.length;
+            char *module_name = arc_arena_alloc(analyzer->arena, name_len + 1);
+            strncpy(module_name, decl->use_decl.path->identifier.token.start, name_len);
+            module_name[name_len] = '\0';
 
-            // Skip all the problematic module loading and symbol resolution
-            // Just create placeholder symbols for the imports
+            ArcModuleFile *module_file =
+                arc_load_and_analyze_module(analyzer, module_name, decl->source_info);
+            if (!module_file) {
+                return false;  // Diagnostics are added in the load function
+            }
+
+            ArcScope *module_scope = module_file->global_scope;
+
             if (decl->use_decl.is_glob_import) {
-                // Glob import: use module::*
-                arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_WARNING, decl->source_info,
-                                   "Glob imports not yet fully supported");
-            } else if (decl->use_decl.imports && decl->use_decl.import_count > 0) {
-                // Specific imports: use module::{item1, item2}
-                for (size_t i = 0; i < decl->use_decl.import_count; i++) {
-                    ArcAstNode *import = decl->use_decl.imports[i];
-
-                    // Extract the actual import name
-                    const char *import_name = NULL;
-                    size_t import_name_len = 0;
-
-                    if (import->type == AST_IDENTIFIER) {
-                        import_name = import->identifier.token.start;
-                        import_name_len = import->identifier.token.length;
-                    } else if (import->type == AST_EXPR_FIELD_ACCESS) {
-                        // This is an aliased import (item as alias)
-                        import_name = import->field_access_expr.field_name.start;
-                        import_name_len = import->field_access_expr.field_name.length;
-                    }
-                    if (import_name && import_name_len > 0) {
-                        // Create a local symbol name
-                        char *local_name = arc_arena_alloc(analyzer->arena, import_name_len + 1);
-                        if (local_name) {
-                            strncpy(local_name, import_name, import_name_len);
-                            local_name[import_name_len] = '\0';  // TEMPORARY: Create placeholder
-                                                                 // symbols since module loading is
-                            // disabled
-                            ArcSymbol *import_symbol =
-                                arc_symbol_create(analyzer, ARC_SYMBOL_FUNCTION, local_name);
-                            if (import_symbol) {
-                                import_symbol->declaration_node = decl;
-                                import_symbol->is_public = false;
-                                import_symbol->is_defined = true;
-                                // Set up basic function type information for common functions
-                                if (strcmp(local_name, "to_upper") == 0) {
-                                    import_symbol->parameter_count = 1;
-                                    import_symbol->type =
-                                        arc_type_create(analyzer, ARC_TYPE_FUNCTION);
-                                    if (import_symbol->type) {
-                                        // Return type: *i8 (string pointer)
-                                        import_symbol->type->function.return_type =
-                                            arc_type_create(analyzer, ARC_TYPE_POINTER);
-                                        if (import_symbol->type->function.return_type) {
-                                            import_symbol->type->function.return_type->pointer
-                                                .pointed_type =
-                                                arc_type_get_builtin(analyzer, TOKEN_KEYWORD_I8);
-                                        }
-                                    }
-                                } else {
-                                    // Default placeholder with no parameters
-                                    import_symbol->parameter_count = 0;
-                                }
-
-                                arc_scope_add_symbol(analyzer->current_scope, import_symbol);
+                // `use module::*;`
+                for (size_t i = 0; i < module_scope->symbol_capacity; i++) {
+                    for (ArcSymbol *sym = module_scope->symbols[i]; sym; sym = sym->next) {
+                        if (sym->is_public) {
+                            if (arc_scope_lookup_symbol(analyzer->current_scope, sym->name)) {
+                                arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_NOTE, decl->source_info,
+                                                   "Symbol '%s' from module '%s' conflicts with an "
+                                                   "existing symbol and was not imported.",
+                                                   sym->name, module_name);
+                                continue;
                             }
+                            // NOTE: This creates a shallow copy. A real compiler might
+                            // need a deep copy or a more complex reference.
+                            arc_scope_add_symbol(analyzer->current_scope, sym);
                         }
                     }
                 }
+            } else if (decl->use_decl.imports && decl->use_decl.import_count > 0) {
+                // `use module::{item1, item2};`
+                for (size_t i = 0; i < decl->use_decl.import_count; i++) {
+                    ArcAstNode *import_node = decl->use_decl.imports[i];
+                    // TODO: Handle aliasing `item as alias`
+                    if (import_node->type != AST_IDENTIFIER) {
+                        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_WARNING,
+                                           import_node->source_info,
+                                           "Import aliasing not yet implemented.");
+                        continue;
+                    }
+
+                    size_t item_len = import_node->identifier.token.length;
+                    char *item_name = arc_arena_alloc(analyzer->arena, item_len + 1);
+                    strncpy(item_name, import_node->identifier.token.start, item_len);
+                    item_name[item_len] = '\0';
+
+                    ArcSymbol *imported_sym = arc_scope_lookup_symbol(module_scope, item_name);
+                    if (!imported_sym) {
+                        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, import_node->source_info,
+                                           "Symbol '%s' not found in module '%s'.", item_name,
+                                           module_name);
+                        continue;
+                    }
+                    if (!imported_sym->is_public) {
+                        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, import_node->source_info,
+                                           "Cannot import private symbol '%s' from module '%s'.",
+                                           item_name, module_name);
+                        continue;
+                    }
+                    if (arc_scope_lookup_symbol(analyzer->current_scope, item_name)) {
+                        arc_diagnostic_add(
+                            analyzer, ARC_DIAGNOSTIC_NOTE, import_node->source_info,
+                            "Imported symbol '%s' conflicts with an existing symbol.", item_name);
+                        continue;
+                    }
+                    arc_scope_add_symbol(analyzer->current_scope, imported_sym);
+                }
             } else {
-                // Simple module import: use module
-                // Create a module symbol in the current scope
+                // `use module;`
+                if (arc_scope_lookup_symbol(analyzer->current_scope, module_name)) {
+                    arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, decl->source_info,
+                                       "Module name '%s' conflicts with an existing symbol.",
+                                       module_name);
+                    return false;
+                }
                 ArcSymbol *module_symbol =
                     arc_symbol_create(analyzer, ARC_SYMBOL_MODULE, module_name);
-                if (module_symbol) {
-                    module_symbol->declaration_node = decl;
-                    module_symbol->is_public = false;
-                    module_symbol->is_defined = true;
-                    arc_scope_add_symbol(analyzer->current_scope, module_symbol);
-                }
+                module_symbol->scope = module_scope;  // Link to the module's global scope
+                module_symbol->is_defined = true;
+                arc_scope_add_symbol(analyzer->current_scope, module_symbol);
             }
-
             return true;
+            // --- END: REPLACEMENT ---
         }
 
         // Handle variable/const statements that reached declaration analyzer
@@ -1880,10 +2059,10 @@ ArcTypeInfo *arc_analyze_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNo
             return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_CHAR);
 
         case AST_LITERAL_NULL:
-            // NULL literals are compatible with any pointer type
-            // For now, return a generic pointer type
-            // TODO: Implement proper null type that can be assigned to any pointer
+            // NULL literals are compatible with any pointer or optional type.
+            // We return a special 'void' type that assignment checks can handle.
             return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_VOID);
+
         case AST_IDENTIFIER: {
             // Extract identifier name from token
             size_t name_len = expr->identifier.token.length;
@@ -1905,28 +2084,88 @@ ArcTypeInfo *arc_analyze_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNo
             }
 
             ArcSymbol *symbol = arc_scope_lookup_symbol_recursive(analyzer->current_scope, name);
-            // symbol should exist due to arc_check_variable_initialization, but double-check
             if (!symbol) {
+                // This should have been caught by the initialization check, but as a safeguard:
+                arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, expr->source_info,
+                                   "Undeclared identifier '%s'", name);
                 return NULL;
             }
 
             return symbol->type;
         }
-        case AST_LITERAL_STRING:
-            // TODO: Implement proper string type
-            // For now, create a basic string type representation
-            ArcTypeInfo *string_type = arc_type_create(analyzer, ARC_TYPE_PRIMITIVE);
-            if (string_type) {
-                string_type->primitive.primitive_type =
-                    TOKEN_STRING_LITERAL;  // Use string literal token as type
-                string_type->is_resolved = true;
-                string_type->size = 8;  // Pointer size
-                string_type->alignment = 8;
+        case AST_LITERAL_STRING: {
+            // For now, a string literal is treated as a pointer to a constant char.
+            // In a more advanced system, this would be a `string` or `&const str` type.
+            ArcTypeInfo *char_ptr_type = arc_type_create(analyzer, ARC_TYPE_POINTER);
+            if (char_ptr_type) {
+                char_ptr_type->pointer.pointed_type =
+                    arc_type_get_builtin(analyzer, TOKEN_KEYWORD_CHAR);
+                char_ptr_type->pointer.is_mutable = false;  // String literals are immutable
+                char_ptr_type->is_resolved = true;
+                char_ptr_type->size = sizeof(void *);
+                char_ptr_type->alignment = sizeof(void *);
             }
-            return string_type;
+            return char_ptr_type;
+        }
 
         case AST_EXPR_BINARY: {
-            // Analyze left and right operands
+            // The scope resolution operator is special and must be handled before
+            // analyzing left/right, as the left side is a module, not an expression.
+            if (expr->binary_expr.op_type == BINARY_OP_SCOPE_RESOLUTION) {
+                if (expr->binary_expr.left->type != AST_IDENTIFIER) {
+                    arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR,
+                                       expr->binary_expr.left->source_info,
+                                       "Expected module name on the left side of '::'.");
+                    return NULL;
+                }
+
+                ArcToken mod_token = expr->binary_expr.left->identifier.token;
+                char *mod_name = arc_arena_alloc(analyzer->arena, mod_token.length + 1);
+                strncpy(mod_name, mod_token.start, mod_token.length);
+                mod_name[mod_token.length] = '\0';
+
+                ArcSymbol *mod_sym =
+                    arc_scope_lookup_symbol_recursive(analyzer->current_scope, mod_name);
+                if (!mod_sym || mod_sym->kind != ARC_SYMBOL_MODULE) {
+                    arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR,
+                                       expr->binary_expr.left->source_info,
+                                       "'%s' is not an imported module.", mod_name);
+                    return NULL;
+                }
+
+                if (expr->binary_expr.right->type != AST_IDENTIFIER) {
+                    arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR,
+                                       expr->binary_expr.right->source_info,
+                                       "Expected identifier on the right side of '::'.");
+                    return NULL;
+                }
+
+                ArcToken item_token = expr->binary_expr.right->identifier.token;
+                char *item_name = arc_arena_alloc(analyzer->arena, item_token.length + 1);
+                strncpy(item_name, item_token.start, item_token.length);
+                item_name[item_token.length] = '\0';
+
+                ArcSymbol *target_sym = arc_scope_lookup_symbol(mod_sym->scope, item_name);
+
+                if (!target_sym) {
+                    arc_diagnostic_add(
+                        analyzer, ARC_DIAGNOSTIC_ERROR, expr->binary_expr.right->source_info,
+                        "Symbol '%s' not found in module '%s'.", item_name, mod_name);
+                    return NULL;
+                }
+
+                // *** VISIBILITY CHECK ***
+                if (!target_sym->is_public) {
+                    arc_diagnostic_add(
+                        analyzer, ARC_DIAGNOSTIC_ERROR, expr->binary_expr.right->source_info,
+                        "Cannot access private symbol '%s' in module '%s'.", item_name, mod_name);
+                    return NULL;
+                }
+
+                return target_sym->type;
+            }
+
+            // For all other binary operators, analyze left and right operands first.
             ArcTypeInfo *left_type = arc_analyze_expression_type(analyzer, expr->binary_expr.left);
             ArcTypeInfo *right_type =
                 arc_analyze_expression_type(analyzer, expr->binary_expr.right);
@@ -1935,9 +2174,7 @@ ArcTypeInfo *arc_analyze_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNo
                 return NULL;
             }
 
-            // Type checking for binary operations
             switch (expr->binary_expr.op_type) {
-                // Arithmetic operations
                 case BINARY_OP_ADD:
                 case BINARY_OP_SUB:
                 case BINARY_OP_MUL:
@@ -1945,7 +2182,6 @@ ArcTypeInfo *arc_analyze_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNo
                 case BINARY_OP_MOD:
                     return arc_analyze_arithmetic_binary_op(analyzer, expr, left_type, right_type);
 
-                // Comparison operations
                 case BINARY_OP_EQ:
                 case BINARY_OP_NE:
                 case BINARY_OP_LT:
@@ -1954,12 +2190,10 @@ ArcTypeInfo *arc_analyze_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNo
                 case BINARY_OP_GE:
                     return arc_analyze_comparison_binary_op(analyzer, expr, left_type, right_type);
 
-                // Logical operations
                 case BINARY_OP_AND:
                 case BINARY_OP_OR:
                     return arc_analyze_logical_binary_op(analyzer, expr, left_type, right_type);
 
-                // Bitwise operations
                 case BINARY_OP_BIT_AND:
                 case BINARY_OP_BIT_OR:
                 case BINARY_OP_BIT_XOR:
@@ -1967,15 +2201,13 @@ ArcTypeInfo *arc_analyze_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNo
                 case BINARY_OP_BIT_SHR:
                     return arc_analyze_bitwise_binary_op(analyzer, expr, left_type, right_type);
 
-                // Assignment operations
                 case BINARY_OP_ASSIGN:
                 case BINARY_OP_ADD_ASSIGN:
                 case BINARY_OP_SUB_ASSIGN:
                 case BINARY_OP_MUL_ASSIGN:
                 case BINARY_OP_DIV_ASSIGN:
                 case BINARY_OP_MOD_ASSIGN:
-                    return arc_analyze_assignment_binary_op(
-                        analyzer, expr, left_type, right_type);  // Arc's distinctive operators
+                    return arc_analyze_assignment_binary_op(analyzer, expr, left_type, right_type);
                 case BINARY_OP_PIPELINE:
                 case BINARY_OP_ASYNC_PIPELINE:
                 case BINARY_OP_REVERSE_PIPELINE:
@@ -1985,7 +2217,7 @@ ArcTypeInfo *arc_analyze_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNo
 
                 default:
                     arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, expr->source_info,
-                                       "Unknown binary operator");
+                                       "Unknown or unhandled binary operator");
                     return NULL;
             }
         }
@@ -2004,7 +2236,6 @@ ArcTypeInfo *arc_analyze_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNo
         }
 
         case AST_EXPR_INDEX: {
-            // Array indexing: array[index]
             ArcTypeInfo *object_type =
                 arc_analyze_expression_type(analyzer, expr->index_expr.object);
             ArcTypeInfo *index_type = arc_analyze_expression_type(analyzer, expr->index_expr.index);
@@ -2013,17 +2244,21 @@ ArcTypeInfo *arc_analyze_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNo
                 return NULL;
             }
 
-            // Check that object is indexable (array, slice, or pointer)
+            if (!arc_type_is_integer(index_type)) {
+                arc_diagnostic_add(
+                    analyzer, ARC_DIAGNOSTIC_ERROR, expr->index_expr.index->source_info,
+                    "Array index must be an integer, but got '%s'", arc_type_to_string(index_type));
+                return arc_type_create(analyzer, ARC_TYPE_ERROR);
+            }
+
             switch (object_type->kind) {
                 case ARC_TYPE_ARRAY:
                     return object_type->array.element_type;
                 case ARC_TYPE_SLICE:
                     return object_type->slice.element_type;
                 case ARC_TYPE_POINTER:
-                    // Pointer arithmetic - return pointed type
                     return object_type->pointer.pointed_type;
                 default:
-
                     arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, expr->source_info,
                                        "Cannot index into type '%s'",
                                        arc_type_to_string(object_type));
@@ -2032,22 +2267,19 @@ ArcTypeInfo *arc_analyze_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNo
         }
 
         case AST_EXPR_FIELD_ACCESS: {
-            // Struct field access: obj.field
             ArcTypeInfo *object_type =
                 arc_analyze_expression_type(analyzer, expr->field_access_expr.object);
             if (!object_type) {
                 return NULL;
             }
 
-            // TODO: Implement struct type lookup when struct declarations are supported
-            // For now, we'll return a generic type
+            // TODO: Implement struct/union field access when those types are fully supported.
             arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_WARNING, expr->source_info,
                                "Field access not fully implemented - struct support pending");
             return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_VOID);
         }
 
         case AST_EXPR_CAST: {
-            // Type casting: value as Type
             ArcTypeInfo *source_type =
                 arc_analyze_expression_type(analyzer, expr->cast_expr.expression);
             ArcTypeInfo *target_type = arc_type_from_ast(analyzer, expr->cast_expr.target_type);
@@ -2056,15 +2288,14 @@ ArcTypeInfo *arc_analyze_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNo
                 return NULL;
             }
 
-            // TODO: Implement cast validity checking
-            // For now, allow all casts but warn
+            // TODO: Implement detailed cast validity checking (e.g., numeric to numeric,
+            // pointer to int, etc.).
             arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_WARNING, expr->source_info,
                                "Cast validation not fully implemented");
             return target_type;
         }
 
         case AST_EXPR_PIPELINE: {
-            // Pipeline operator: value |> func
             ArcTypeInfo *left_type =
                 arc_analyze_expression_type(analyzer, expr->pipeline_expr.left);
             ArcTypeInfo *right_type =
@@ -2074,11 +2305,9 @@ ArcTypeInfo *arc_analyze_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNo
                 return NULL;
             }
 
-            // Use the same logic as binary pipeline operators
             return arc_analyze_pipeline_binary_op(analyzer, expr, left_type, right_type);
         }
         case AST_EXPR_RANGE: {
-            // Range expressions: start..end, start...end
             if (expr->range_expr.start) {
                 arc_analyze_expression_type(analyzer, expr->range_expr.start);
             }
@@ -2086,58 +2315,53 @@ ArcTypeInfo *arc_analyze_expression_type(ArcSemanticAnalyzer *analyzer, ArcAstNo
                 arc_analyze_expression_type(analyzer, expr->range_expr.end);
             }
 
-            // TODO: Create proper Range<T> type
-            // For now, return a generic range indicator
+            // TODO: Create a proper Range<T> type.
+            arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_WARNING, expr->source_info,
+                               "Range type analysis not fully implemented.");
             return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_VOID);
         }
 
         case AST_EXPR_ARRAY_LITERAL: {
-            // Array literals: [1, 2, 3]
             if (expr->array_literal_expr.element_count == 0) {
-                // Empty array - need type inference from context
                 arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_WARNING, expr->source_info,
-                                   "Empty array literal requires type inference from context");
+                                   "Empty array literal requires type inference from context. This "
+                                   "is not yet supported.");
                 return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_VOID);
             }
 
-            // Analyze first element to determine array type
             ArcTypeInfo *element_type =
                 arc_analyze_expression_type(analyzer, expr->array_literal_expr.elements[0]);
             if (!element_type) {
                 return NULL;
             }
 
-            // Check that all elements have compatible types
             for (size_t i = 1; i < expr->array_literal_expr.element_count; i++) {
                 ArcTypeInfo *current_element_type =
                     arc_analyze_expression_type(analyzer, expr->array_literal_expr.elements[i]);
                 if (!current_element_type ||
                     !arc_type_is_assignable_to(current_element_type, element_type)) {
-                    arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, expr->source_info,
-                                       "Array element at index %zu has incompatible type", i);
+                    arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR,
+                                       expr->array_literal_expr.elements[i]->source_info,
+                                       "Array element has type '%s', but expected '%s' based on "
+                                       "the first element.",
+                                       arc_type_to_string(current_element_type),
+                                       arc_type_to_string(element_type));
                     return arc_type_create(analyzer, ARC_TYPE_ERROR);
                 }
             }
 
-            // Create array type
-            ArcTypeInfo *array_type = arc_type_create(analyzer, ARC_TYPE_ARRAY);
-            if (array_type) {
-                array_type->array.element_type = element_type;
-                array_type->array.size = (long long)expr->array_literal_expr.element_count;
-                array_type->is_resolved = true;
-            }
-            return array_type;
+            return arc_type_create_array(analyzer, element_type,
+                                         (long long)expr->array_literal_expr.element_count);
         }
 
         case AST_EXPR_STRUCT_LITERAL: {
-            // Struct literals: Point{x: 1, y: 2}
-            // TODO: Implement when struct declarations are supported
             arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_WARNING, expr->source_info,
                                "Struct literal analysis not implemented - struct support pending");
             return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_VOID);
         }
 
         default:
+            // Fallback to the inference helper, though most cases should be covered above.
             return arc_infer_expression_type(analyzer, expr);
     }
 }
@@ -2832,148 +3056,4 @@ static void arc_check_unused_in_scope(ArcSemanticAnalyzer *analyzer, ArcScope *s
             (void)symbol;  // Suppress unused variable warning        }
         }
     }
-}
-
-// Initialize module resolver
-static void arc_module_resolver_init(void) {
-    if (module_resolver)
-        return;
-
-    module_resolver = malloc(sizeof(ArcModuleResolver));
-    if (module_resolver) {
-        module_resolver->loaded_modules = NULL;
-        module_resolver->search_paths = malloc(sizeof(char *) * 4);
-        module_resolver->search_path_count = 0;
-
-        // Add default search paths
-        if (module_resolver->search_paths) {
-            module_resolver->search_paths[module_resolver->search_path_count++] = ".";
-            module_resolver->search_paths[module_resolver->search_path_count++] = "./src";
-            module_resolver->search_paths[module_resolver->search_path_count++] = "./stdlib";
-        }
-    }
-}
-
-// Construct module file path from module name
-static char *arc_module_construct_path(const char *module_name) {
-    if (!module_name || !module_resolver)
-        return NULL;
-
-    // Try each search path
-    for (size_t i = 0; i < module_resolver->search_path_count; i++) {
-        // Try .arc extension first
-        size_t path_len = strlen(module_resolver->search_paths[i]) + strlen(module_name) + 10;
-        char *filepath = malloc(path_len);
-        if (!filepath)
-            continue;
-#ifdef _WIN32
-        snprintf(filepath, path_len, "%s\\%s.arc", module_resolver->search_paths[i], module_name);
-#else
-        snprintf(filepath, path_len, "%s/%s.arc", module_resolver->search_paths[i], module_name);
-#endif
-
-        // Check if file exists (simplified check)
-        FILE *file = fopen(filepath, "r");
-        if (file) {
-            fclose(file);
-            return filepath;
-        }
-
-        free(filepath);
-    }
-
-    return NULL;
-}
-
-// Load module content from file
-static char *arc_module_load_content(const char *filepath) {
-    FILE *file = fopen(filepath, "r");
-    if (!file)
-        return NULL;
-
-    // Get file size
-    fseek(file, 0, SEEK_END);
-    long size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    if (size <= 0) {
-        fclose(file);
-        return NULL;
-    }
-
-    // Allocate and read content
-    char *content = malloc(size + 1);
-    if (!content) {
-        fclose(file);
-        return NULL;
-    }
-
-    size_t read_size = fread(content, 1, size, file);
-    content[read_size] = '\0';
-    fclose(file);
-
-    return content;
-}
-
-// Find or load a module by name
-static ArcModuleFile *arc_module_resolve(const char *module_name) {
-    if (!module_name || !module_resolver)
-        return NULL;
-
-    // Check if already loaded
-    ArcModuleFile *current = module_resolver->loaded_modules;
-    while (current) {
-        if (current->filepath && strstr(current->filepath, module_name)) {
-            return current;
-        }
-        current = current->next;
-    }
-
-    // Try to load new module
-    char *filepath = arc_module_construct_path(module_name);
-    if (!filepath)
-        return NULL;
-
-    char *content = arc_module_load_content(filepath);
-    if (!content) {
-        free(filepath);
-        return NULL;
-    }
-
-    // Create module file entry
-    ArcModuleFile *module_file = malloc(sizeof(ArcModuleFile));
-    if (!module_file) {
-        free(filepath);
-        free(content);
-        return NULL;
-    }
-
-    module_file->filepath = filepath;
-    module_file->content = content;
-    module_file->ast = NULL;  // Will be parsed later
-    module_file->is_loaded = false;
-    module_file->next = module_resolver->loaded_modules;
-    module_resolver->loaded_modules = module_file;
-
-    return module_file;
-}
-
-// Cleanup module resolver
-static void arc_module_resolver_cleanup(void) {
-    if (!module_resolver)
-        return;
-
-    ArcModuleFile *current = module_resolver->loaded_modules;
-    while (current) {
-        ArcModuleFile *next = current->next;
-        free(current->filepath);
-        free(current->content);
-        // AST cleanup handled elsewhere
-        free(current);
-        current = next;
-    }
-
-    free(module_resolver->search_paths);
-    free(module_resolver);
-    module_resolver = NULL;
 }
