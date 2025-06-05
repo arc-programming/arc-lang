@@ -1,5 +1,7 @@
 // Comprehensive Arc codegen test with printf output
 // This test exercises all working features of the Arc compiler
+extern func puts(s: *i8);
+
 
 func test_integer_calculations() {
     let a = 15
@@ -55,5 +57,6 @@ func main() -> i32 {
     test_comparisons()
     test_control_flow()
     test_function_calls()
+
     return 0
 }
