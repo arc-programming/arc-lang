@@ -1,3 +1,4 @@
+#include "arc/codegen.h"
 #include "arc/common.h"
 #include "arc/lexer.h"
 #include "arc/parser.h"
@@ -179,16 +180,55 @@ int main(int argc, char *argv[]) {
         FREE(file_content);
         return 1;
     }
-
     printf("=== Semantic Analysis Complete ===\n");
 
+    // Code generation stage
+    printf("\n=== Starting Code Generation ===\n");
+
+    ArcCodegenOptions codegen_options = arc_codegen_default_options();
+    codegen_options.target_name = "arc_program";
+    codegen_options.output_dir = ".";
+    codegen_options.emit_debug_info = true;
+
+    ArcCodegen *codegen = arc_codegen_create(&codegen_options);
+    if (!codegen) {
+        printf("*** Failed to create code generator! ***\n");
+        arc_semantic_analyzer_destroy(analyzer);
+        arc_parser_cleanup(&parser);
+        arc_arena_destroy(arena);
+        FREE(file_content);
+        return 1;
+    }
+
+    bool codegen_success = arc_codegen_generate(codegen, ast, analyzer);
+
+    if (!codegen_success || arc_codegen_has_errors(codegen)) {
+        printf("*** Code generation encountered errors! ***\n");
+        const char *error = arc_codegen_get_error(codegen);
+        if (error) {
+            printf("Error: %s\n", error);
+        }
+
+        arc_codegen_destroy(codegen);
+        arc_semantic_analyzer_destroy(analyzer);
+        arc_parser_cleanup(&parser);
+        arc_arena_destroy(arena);
+        FREE(file_content);
+        return 1;
+    }
+
+    printf("=== Code Generation Complete ===\n");
+    printf("Generated files:\n");
+    printf("  - arc_program.h\n");
+    printf("  - arc_program.c\n");
+    printf("  - main.c\n");
+
     // Cleanup
+    arc_codegen_destroy(codegen);
     arc_semantic_analyzer_destroy(analyzer);
     arc_parser_cleanup(&parser);
     arc_arena_destroy(arena);
-    FREE(file_content);  // TODO:
-    // 4. Semantic analysis
-    // 5. Code generation
+    FREE(file_content);
 
     printf("Compilation complete.\n");
     return 0;

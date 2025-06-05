@@ -1,5 +1,6 @@
 #include "arc/lexer.h"
 #include <ctype.h>
+#include <stdlib.h>
 #include <string.h>
 
 // Forward declarations
@@ -51,6 +52,31 @@ static ArcToken make_token(ArcLexer *lexer, ArcTokenType type, const char *start
     // Initialize the value union to a known state (e.g., zero)
     // This is good practice, especially if not all token types use the union.
     memset(&token.value, 0, sizeof(token.value));
+
+    // Parse numeric values
+    if (type == TOKEN_NUMBER_INT) {
+        char *lexeme = malloc(token.length + 1);
+        if (lexeme) {
+            strncpy(lexeme, start_of_lexeme, token.length);
+            lexeme[token.length] = '\0';
+
+            // Parse the integer value
+            token.value.int_val = strtoll(lexeme, NULL, 0);  // Base 0 handles hex, octal, decimal
+
+            free(lexeme);
+        }
+    } else if (type == TOKEN_NUMBER_FLOAT) {
+        char *lexeme = malloc(token.length + 1);
+        if (lexeme) {
+            strncpy(lexeme, start_of_lexeme, token.length);
+            lexeme[token.length] = '\0';
+
+            // Parse the float value
+            token.value.float_val = strtod(lexeme, NULL);
+
+            free(lexeme);
+        }
+    }
 
     return token;
 }
