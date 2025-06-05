@@ -883,9 +883,54 @@ bool arc_semantic_has_errors(ArcSemanticAnalyzer *analyzer) {
 ArcTypeInfo *arc_type_from_ast(ArcSemanticAnalyzer *analyzer, ArcAstNode *type_node) {
     if (!type_node)
         return NULL;
-    switch (type_node->type) {
-        case AST_TYPE_PRIMITIVE: {
-            return arc_type_get_builtin(analyzer, type_node->type_primitive.primitive_type);
+    switch (type_node->type) {        case AST_TYPE_PRIMITIVE: {
+            // Handle both actual primitive keywords and identifiers used as primitive types
+            if (type_node->type_primitive.primitive_type == TOKEN_IDENTIFIER) {
+                // This is a type identifier that was parsed as primitive
+                char type_name[256];
+                size_t name_len = type_node->type_primitive.token.length;
+                if (name_len >= sizeof(type_name)) {
+                    arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, type_node->source_info,
+                                       "Type name too long");
+                    return NULL;
+                }
+                
+                strncpy(type_name, type_node->type_primitive.token.start, name_len);
+                type_name[name_len] = '\0';
+                
+                // Map common type names to token types
+                if (strcmp(type_name, "i8") == 0) {
+                    return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_I8);
+                } else if (strcmp(type_name, "i16") == 0) {
+                    return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_I16);
+                } else if (strcmp(type_name, "i32") == 0) {
+                    return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_I32);
+                } else if (strcmp(type_name, "i64") == 0) {
+                    return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_I64);
+                } else if (strcmp(type_name, "u8") == 0) {
+                    return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_U8);
+                } else if (strcmp(type_name, "u16") == 0) {
+                    return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_U16);
+                } else if (strcmp(type_name, "u32") == 0) {
+                    return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_U32);
+                } else if (strcmp(type_name, "u64") == 0) {
+                    return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_U64);
+                } else if (strcmp(type_name, "f32") == 0) {
+                    return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_F32);
+                } else if (strcmp(type_name, "f64") == 0) {
+                    return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_F64);
+                } else if (strcmp(type_name, "bool") == 0) {
+                    return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_BOOL);
+                } else if (strcmp(type_name, "void") == 0) {
+                    return arc_type_get_builtin(analyzer, TOKEN_KEYWORD_VOID);
+                } else {
+                    arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, type_node->source_info,
+                                       "Unknown type '%s'", type_name);
+                    return NULL;
+                }
+            } else {
+                return arc_type_get_builtin(analyzer, type_node->type_primitive.primitive_type);
+            }
         }
         case AST_IDENTIFIER: {
             // Handle type identifiers (like i32, f64, etc.)
@@ -1045,10 +1090,10 @@ ArcTypeInfo *arc_type_from_ast(ArcSemanticAnalyzer *analyzer, ArcAstNode *type_n
 
             return func_type;
         }
-
         default:
+            // Debug: print the actual node type that's causing the error
             arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, type_node->source_info,
-                               "Unknown type kind in semantic analysis");
+                               "Unknown type kind in semantic analysis: %d", type_node->type);
             return NULL;
     }
 }
