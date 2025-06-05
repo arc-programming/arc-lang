@@ -98,6 +98,7 @@ typedef enum {
 
     // Declarations
     AST_DECL_FUNCTION,    // fn name(params) -> Type { }
+    AST_DECL_EXTERN,      // extern fn name(params) -> Type;
     AST_DECL_STRUCT,      // struct Name { fields }
     AST_DECL_ENUM,        // enum Name { variants }
     AST_DECL_TYPE_ALIAS,  // type Name = Type;
@@ -435,9 +436,7 @@ struct ArcAstNode {
             ArcToken defer_token;   // 'defer' token
         } defer_stmt;
 
-        // === DECLARATIONS ===
-
-        // AST_DECL_FUNCTION
+        // === DECLARATIONS ===        // AST_DECL_FUNCTION
         struct {
             ArcToken name;            // Function name token
             ArcAstNode **parameters;  // Dynamically managed array
@@ -446,6 +445,17 @@ struct ArcAstNode {
             ArcAstNode *body;         // Function body
             ArcToken fn_token;        // 'fn' token
         } function_decl;
+
+        // AST_DECL_EXTERN
+        struct {
+            ArcToken name;            // Function name token
+            ArcAstNode **parameters;  // Dynamically managed array
+            size_t parameter_count;
+            ArcAstNode *return_type;  // Return type (NULL if none)
+            ArcToken extern_token;    // 'extern' token
+            ArcToken fn_token;        // 'fn' token
+            const char *c_name;       // Optional C function name (if different from Arc name)
+        } extern_decl;
 
         // AST_DECL_STRUCT
         struct {

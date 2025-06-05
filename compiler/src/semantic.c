@@ -1444,6 +1444,110 @@ bool arc_analyze_declaration(ArcSemanticAnalyzer *analyzer, ArcAstNode *decl) {
                     return false;
                 }
             }
+            return true;
+        }
+
+        case AST_DECL_EXTERN: {
+            // Get extern function name from token
+            if (decl->extern_decl.name.length == 0 || !decl->extern_decl.name.start) {
+                arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, decl->source_info,
+                                   "Extern function declaration missing name");
+                return false;
+            }
+
+            // Extract name from token (we need to make a null-terminated copy)
+            size_t name_len = decl->extern_decl.name.length;
+            char *name = arc_arena_alloc(analyzer->arena, name_len + 1);
+            if (!name) {
+                arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, decl->source_info,
+                                   "Failed to allocate memory for extern function name");
+                return false;
+            }
+            strncpy(name, decl->extern_decl.name.start, name_len);
+            name[name_len] = '\0';
+
+            // Check for duplicate declaration in current scope
+            if (arc_scope_lookup_symbol(analyzer->current_scope, name)) {
+                arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, decl->source_info,
+                                   "Extern function '%s' already declared in this scope", name);
+                return false;
+            }
+
+            // Create extern function symbol
+            ArcSymbol *symbol = arc_symbol_create(analyzer, ARC_SYMBOL_FUNCTION, name);
+            if (!symbol) {
+                arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, decl->source_info,
+                                   "Failed to create symbol for extern function '%s'", name);
+                return false;
+            }
+
+            // Set extern function properties
+            symbol->declaration_node = decl;
+            symbol->is_public = true;    // Extern functions are publicly accessible
+            symbol->is_defined = false;  // Extern functions are declared but not defined in Arc
+            symbol->is_extern = true;    // Mark as extern function
+            symbol->parameter_count = decl->extern_decl.parameter_count;
+
+            // Create function type with return type
+            symbol->type = arc_type_create(analyzer, ARC_TYPE_FUNCTION);
+            if (symbol->type) {
+                // Set return type from declaration
+                if (decl->extern_decl.return_type) {
+                    ArcTypeInfo *return_type =
+                        arc_type_from_ast(analyzer, decl->extern_decl.return_type);
+                    if (!return_type) {
+                        arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, decl->source_info,
+                                           "Failed to resolve return type for extern function '%s'",
+                                           name);
+                        return false;
+                    }
+                    symbol->type->function.return_type = return_type;
+                } else {
+                    // Default to void if no return type specified
+                    symbol->type->function.return_type =
+                        arc_type_get_builtin(analyzer, TOKEN_KEYWORD_VOID);
+                }
+
+                // Analyze parameter types
+                if (decl->extern_decl.parameter_count > 0) {
+                    symbol->type->function.parameter_types = arc_arena_alloc(
+                        analyzer->arena, sizeof(ArcTypeInfo *) * decl->extern_decl.parameter_count);
+                    if (!symbol->type->function.parameter_types) {
+                        arc_diagnostic_add(
+                            analyzer, ARC_DIAGNOSTIC_ERROR, decl->source_info,
+                            "Failed to allocate parameter types for extern function '%s'", name);
+                        return false;
+                    }
+
+                    for (size_t i = 0; i < decl->extern_decl.parameter_count; i++) {
+                        ArcAstNode *param = decl->extern_decl.parameters[i];
+                        if (param->type != AST_PARAMETER) {
+                            arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, param->source_info,
+                                               "Invalid parameter node in extern function '%s'",
+                                               name);
+                            return false;
+                        }
+
+                        ArcTypeInfo *param_type =
+                            arc_type_from_ast(analyzer, param->parameter.type_annotation);
+                        if (!param_type) {
+                            arc_diagnostic_add(
+                                analyzer, ARC_DIAGNOSTIC_ERROR, param->source_info,
+                                "Failed to resolve parameter type in extern function '%s'", name);
+                            return false;
+                        }
+                        symbol->type->function.parameter_types[i] = param_type;
+                    }
+                }
+                symbol->type->function.parameter_count = decl->extern_decl.parameter_count;
+            }
+
+            // Add to current scope
+            if (!arc_scope_add_symbol(analyzer->current_scope, symbol)) {
+                arc_diagnostic_add(analyzer, ARC_DIAGNOSTIC_ERROR, decl->source_info,
+                                   "Failed to add extern function '%s' to scope", name);
+                return false;
+            }
 
             return true;
         }

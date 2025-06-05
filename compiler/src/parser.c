@@ -13,6 +13,7 @@
 
 // Forward declarations for parsing functions
 static ArcAstNode *parse_declaration(ArcParser *parser);
+static ArcAstNode *parse_extern_declaration(ArcParser *parser);
 static ArcAstNode *parse_statement(ArcParser *parser);
 static ArcAstNode *parse_expression(ArcParser *parser);
 static ArcAstNode *parse_primary(ArcParser *parser);
@@ -1915,6 +1916,92 @@ static ArcAstNode *parse_use_declaration(ArcParser *parser) {
     return node;
 }
 
+static ArcAstNode *parse_extern_declaration(ArcParser *parser) {
+    ArcSourceInfo source_info = arc_parser_current_source_info(parser);
+    ArcToken extern_token = consume(parser, TOKEN_KEYWORD_EXTERN, "Expected 'extern'");
+    ArcToken func_token = consume(parser, TOKEN_KEYWORD_FUNC, "Expected 'func' after 'extern'");
+
+    ArcToken name = consume(parser, TOKEN_IDENTIFIER, "Expected function name");
+
+    consume(parser, TOKEN_LPAREN, "Expected '(' after function name");
+
+    // Parse parameters (same as regular function)
+    ArcAstNode **parameters = NULL;
+    size_t parameter_count = 0;
+    size_t parameter_capacity = 0;
+
+    if (!check(parser, TOKEN_RPAREN)) {
+        do {
+            // Parse parameter: name: type
+            ArcSourceInfo param_source = arc_parser_current_source_info(parser);
+            ArcToken param_name = consume(parser, TOKEN_IDENTIFIER, "Expected parameter name");
+
+            consume(parser, TOKEN_COLON, "Expected ':' after parameter name");
+
+            // Parse parameter type
+            ArcAstNode *param_type = parse_type(parser);
+
+            // Create parameter node
+            ArcAstNode *param = arc_ast_node_create(parser, AST_PARAMETER, param_source);
+            if (param) {
+                param->parameter.name = param_name;
+                param->parameter.type_annotation = param_type;
+            }
+
+            // Add to parameters array
+            if (parameter_count >= parameter_capacity) {
+                size_t new_capacity = parameter_capacity == 0 ? 4 : parameter_capacity * 2;
+                ArcAstNode **new_parameters =
+                    realloc(parameters, sizeof(ArcAstNode *) * new_capacity);
+                if (!new_parameters) {
+                    free(parameters);
+                    return NULL;
+                }
+                parameters = new_parameters;
+                parameter_capacity = new_capacity;
+            }
+            parameters[parameter_count++] = param;
+
+        } while (match(parser, TOKEN_COMMA));
+    }
+
+    consume(parser, TOKEN_RPAREN, "Expected ')' after parameters");
+
+    // Parse return type
+    ArcAstNode *return_type = NULL;
+    if (match(parser, TOKEN_ARROW)) {
+        return_type = parse_type(parser);
+    }
+
+    // Extern functions end with semicolon, no body
+    consume(parser, TOKEN_SEMICOLON, "Expected ';' after extern function declaration");
+
+    ArcAstNode *node = arc_ast_node_create(parser, AST_DECL_EXTERN, source_info);
+    if (node) {
+        node->extern_decl.extern_token = extern_token;
+        node->extern_decl.fn_token = func_token;
+        node->extern_decl.name = name;
+        node->extern_decl.parameter_count = parameter_count;
+        node->extern_decl.return_type = return_type;
+        node->extern_decl.c_name = NULL;  // For now, use Arc name as C name
+
+        // Convert parameters to arena/heap allocated array
+        if (parameter_count > 0) {
+            node->extern_decl.parameters =
+                (ArcAstNode **)alloc_array(parser, parameter_count, sizeof(ArcAstNode *));
+            if (node->extern_decl.parameters) {
+                memcpy(node->extern_decl.parameters, parameters,
+                       sizeof(ArcAstNode *) * parameter_count);
+            }
+        } else {
+            node->extern_decl.parameters = NULL;
+        }
+    }
+
+    free(parameters);
+    return node;
+}
+
 static ArcAstNode *parse_declaration(ArcParser *parser) {
     ArcToken start_token = parser->current_token;  // Track starting position
 
@@ -1925,6 +2012,8 @@ static ArcAstNode *parse_declaration(ArcParser *parser) {
             // For now, just parse the following declaration (ignoring pub)
             // TODO: Add pub flag to AST nodes
             return parse_declaration(parser);
+        case TOKEN_KEYWORD_EXTERN:
+            return parse_extern_declaration(parser);
         case TOKEN_KEYWORD_FUNC:
             return parse_function_declaration(parser);
         case TOKEN_KEYWORD_CONST:

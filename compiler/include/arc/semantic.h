@@ -30,6 +30,7 @@ typedef struct ArcSymbol {
     bool is_mutable;
     bool is_public;
     bool is_defined;  // For function declarations vs definitions
+    bool is_extern;   // For extern function declarations
 
     // For function symbols
     struct ArcSymbol **parameters;
