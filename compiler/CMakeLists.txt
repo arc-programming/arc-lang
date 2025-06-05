@@ -12,6 +12,7 @@ set(COMPILER_LIB_SOURCES
     src/semantic.c
     src/codegen.c
     src/codegen_ast.c
+    src/cli.c
     # src/lexer/token.c
     # src/utils/memory.c
     # ... add more .c files here as you create them (but NOT main.c)
