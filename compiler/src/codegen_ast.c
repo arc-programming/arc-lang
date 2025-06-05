@@ -242,6 +242,16 @@ static bool codegen_generate_declaration_internal(ArcCodegen *codegen, ArcAstNod
         case AST_DECL_EXTERN:
             return arc_codegen_generate_extern_function(codegen, decl);
 
+        case AST_DECL_USE:
+            // Use declarations are handled during semantic analysis
+            // and don't generate C code directly
+            return true;
+
+        case AST_DECL_MODULE:
+            // Module declarations are handled during semantic analysis
+            // and don't generate C code directly
+            return true;
+
         default:
             arc_codegen_set_error(codegen, "Unsupported declaration type: %d", decl->type);
             return false;

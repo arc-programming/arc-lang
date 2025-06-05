@@ -1835,24 +1835,66 @@ static ArcAstNode *parse_module_declaration(ArcParser *parser) {
     ArcToken name = consume(parser, TOKEN_IDENTIFIER, "Expected module name");
 
     ArcAstNode *node = arc_ast_node_create(parser, AST_DECL_MODULE, source_info);
-    if (node) {
-        node->module_decl.mod_token = mod_token;
-        node->module_decl.name = name;
-    }
+    if (!node)
+        return NULL;
+
+    node->module_decl.mod_token = mod_token;
+    node->module_decl.name = name;
+    node->module_decl.body = NULL;  // Initialize as external module
+    node->module_decl.is_external = true;
 
     // Check if this is a module with a body or just a declaration
     if (match(parser, TOKEN_LBRACE)) {
         // Module with body: mod name { ... }
-        // For now, we'll parse the body as a block but not store it
-        // This is a simplified implementation
-        int brace_count = 1;
-        while (brace_count > 0 && !check(parser, TOKEN_EOF)) {
-            if (match(parser, TOKEN_LBRACE)) {
-                brace_count++;
-            } else if (match(parser, TOKEN_RBRACE)) {
-                brace_count--;
-            } else {
-                advance(parser);
+        node->module_decl.is_external = false;
+
+        // Parse module body as a list of declarations
+        ArcAstNode **declarations = NULL;
+        size_t declaration_count = 0;
+        size_t declaration_capacity = 0;
+
+        while (!check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
+            ArcAstNode *decl = parse_declaration(parser);
+            if (!decl) {
+                // Error recovery - skip to next declaration
+                while (!check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF) &&
+                       !is_statement_terminator(parser)) {
+                    advance(parser);
+                }
+                if (is_statement_terminator(parser)) {
+                    advance(parser);
+                }
+                continue;
+            }  // Grow declarations array if needed
+            if (declaration_count >= declaration_capacity) {
+                size_t new_capacity = declaration_capacity == 0 ? 8 : declaration_capacity * 2;
+                ArcAstNode **new_declarations =
+                    arc_arena_alloc(parser->ast_arena, new_capacity * sizeof(ArcAstNode *));
+                if (!new_declarations) {
+                    return NULL;
+                }
+
+                if (declarations) {
+                    memcpy(new_declarations, declarations,
+                           declaration_count * sizeof(ArcAstNode *));
+                }
+                declarations = new_declarations;
+                declaration_capacity = new_capacity;
+            }
+
+            declarations[declaration_count++] = decl;
+        }
+
+        consume(parser, TOKEN_RBRACE, "Expected '}' after module body");
+
+        // Create module body node
+        if (declaration_count > 0) {
+            ArcSourceInfo body_source = source_info;
+            ArcAstNode *body = arc_ast_node_create(parser, AST_STMT_BLOCK, body_source);
+            if (body) {
+                body->block_stmt.statements = declarations;
+                body->block_stmt.statement_count = declaration_count;
+                node->module_decl.body = body;
             }
         }
     } else {
@@ -1885,6 +1927,14 @@ static ArcAstNode *parse_module_path(ArcParser *parser) {
     }
 
     while (match(parser, TOKEN_DOUBLE_COLON)) {
+        // Check if the next token is { or * (import specifiers)
+        if (check(parser, TOKEN_LBRACE) || check(parser, TOKEN_ASTERISK)) {
+            // This :: is for import specifiers, not part of the path
+            // We need to "put back" the :: token - but that's complex
+            // For now, let's handle this in the use declaration parser
+            break;
+        }
+
         ArcToken next_name = consume(parser, TOKEN_IDENTIFIER, "Expected identifier after '::'");
 
         ArcSourceInfo access_source = arc_parser_current_source_info(parser);
@@ -1905,13 +1955,130 @@ static ArcAstNode *parse_use_declaration(ArcParser *parser) {
     ArcSourceInfo source_info = arc_parser_current_source_info(parser);
     ArcToken use_token = consume(parser, TOKEN_KEYWORD_USE, "Expected 'use'");
 
-    ArcAstNode *path = parse_module_path(parser);
+    // Parse the module path - but for use declarations, we parse it differently
+    // to handle use module::{imports} syntax
+    ArcSourceInfo path_source = arc_parser_current_source_info(parser);
+    ArcToken first_name = consume(parser, TOKEN_IDENTIFIER, "Expected module name");
+
+    // Create simple identifier for the module name
+    ArcAstNode *path = arc_ast_node_create(parser, AST_IDENTIFIER, path_source);
+    if (path) {
+        path->identifier.token = first_name;
+    }
+
+    // Check for import specifiers: use std::collections::{Vec, HashMap}
+    ArcAstNode **imports = NULL;
+    size_t import_count = 0;
+    bool is_glob_import = false;
+
+    if (match(parser, TOKEN_DOUBLE_COLON)) {
+        if (match(parser, TOKEN_ASTERISK)) {
+            // Glob import: use module::*
+            is_glob_import = true;
+        } else if (match(parser, TOKEN_LBRACE)) {
+            // Specific imports: use module::{item1, item2}
+            size_t import_capacity = 0;
+
+            if (!check(parser, TOKEN_RBRACE)) {
+                do {
+                    ArcToken import_name =
+                        consume(parser, TOKEN_IDENTIFIER, "Expected import name");
+
+                    // Create identifier node for this import
+                    ArcSourceInfo import_source = arc_parser_current_source_info(parser);
+                    ArcAstNode *import_node =
+                        arc_ast_node_create(parser, AST_IDENTIFIER, import_source);
+                    if (import_node) {
+                        import_node->identifier.token = import_name;
+                    }
+
+                    // Check for alias: item as alias (using identifier for now)
+                    if (check(parser, TOKEN_IDENTIFIER)) {
+                        // Peek to see if this might be 'as'
+                        ArcToken peek_token = parser->current_token;
+                        if (peek_token.length == 2 && strncmp(peek_token.start, "as", 2) == 0) {
+                            advance(parser);  // consume 'as'
+                            ArcToken alias_name =
+                                consume(parser, TOKEN_IDENTIFIER, "Expected alias name");
+                            // For now, store the alias in a field access expression
+                            ArcAstNode *alias_node =
+                                arc_ast_node_create(parser, AST_EXPR_FIELD_ACCESS, import_source);
+                            if (alias_node) {
+                                alias_node->field_access_expr.object = import_node;
+                                alias_node->field_access_expr.field_name = alias_name;
+                                alias_node->field_access_expr.dot_token =
+                                    parser->previous_token;  // The 'as' token
+                            }
+                            import_node = alias_node;
+                        }
+                    }
+
+                    // Grow imports array if needed
+                    if (import_count >= import_capacity) {
+                        size_t new_capacity = import_capacity == 0 ? 4 : import_capacity * 2;
+                        ArcAstNode **new_imports =
+                            arc_arena_alloc(parser->ast_arena, new_capacity * sizeof(ArcAstNode *));
+                        if (!new_imports) {
+                            return NULL;
+                        }
+
+                        if (imports) {
+                            memcpy(new_imports, imports, import_count * sizeof(ArcAstNode *));
+                        }
+                        imports = new_imports;
+                        import_capacity = new_capacity;
+                    }
+
+                    imports[import_count++] = import_node;
+                } while (match(parser, TOKEN_COMMA));
+            }
+
+            consume(parser, TOKEN_RBRACE, "Expected '}' after import list");
+        } else {
+            // Single item import: use module::item
+            ArcToken item_name = consume(parser, TOKEN_IDENTIFIER, "Expected item name after '::'");
+
+            ArcSourceInfo item_source = arc_parser_current_source_info(parser);
+            ArcAstNode *item_node = arc_ast_node_create(parser, AST_IDENTIFIER, item_source);
+            if (item_node) {
+                item_node->identifier.token = item_name;
+            }
+
+            // Check for alias (simplified check for now)
+            if (check(parser, TOKEN_IDENTIFIER)) {
+                // Peek to see if this might be 'as'
+                ArcToken peek_token = parser->current_token;
+                if (peek_token.length == 2 && strncmp(peek_token.start, "as", 2) == 0) {
+                    advance(parser);  // consume 'as'
+                    ArcToken alias_name = consume(parser, TOKEN_IDENTIFIER, "Expected alias name");
+                    ArcAstNode *alias_node =
+                        arc_ast_node_create(parser, AST_EXPR_FIELD_ACCESS, item_source);
+                    if (alias_node) {
+                        alias_node->field_access_expr.object = item_node;
+                        alias_node->field_access_expr.field_name = alias_name;
+                        alias_node->field_access_expr.dot_token = parser->previous_token;
+                    }
+                    item_node = alias_node;
+                }
+            }
+
+            imports = arc_arena_alloc(parser->ast_arena, sizeof(ArcAstNode *));
+            if (imports) {
+                imports[0] = item_node;
+                import_count = 1;
+            }
+        }
+    }
+
     consume_statement_terminator(parser);
 
     ArcAstNode *node = arc_ast_node_create(parser, AST_DECL_USE, source_info);
     if (node) {
         node->use_decl.use_token = use_token;
         node->use_decl.path = path;
+        node->use_decl.imports = imports;
+        node->use_decl.import_count = import_count;
+        node->use_decl.is_glob_import = is_glob_import;
     }
     return node;
 }
@@ -2004,26 +2171,32 @@ static ArcAstNode *parse_extern_declaration(ArcParser *parser) {
 
 static ArcAstNode *parse_declaration(ArcParser *parser) {
     ArcToken start_token = parser->current_token;  // Track starting position
+    bool is_public = false;
 
+    // Check for pub modifier
+    if (match(parser, TOKEN_KEYWORD_PUB)) {
+        is_public = true;
+    }
+
+    ArcAstNode *decl = NULL;
     switch (parser->current_token.type) {
-        case TOKEN_KEYWORD_PUB:
-            // Handle public visibility modifier
-            advance(parser);  // consume 'pub'
-            // For now, just parse the following declaration (ignoring pub)
-            // TODO: Add pub flag to AST nodes
-            return parse_declaration(parser);
         case TOKEN_KEYWORD_EXTERN:
-            return parse_extern_declaration(parser);
+            decl = parse_extern_declaration(parser);
+            break;
         case TOKEN_KEYWORD_FUNC:
-            return parse_function_declaration(parser);
+            decl = parse_function_declaration(parser);
+            break;
         case TOKEN_KEYWORD_CONST:
         case TOKEN_KEYWORD_LET:
         case TOKEN_KEYWORD_MUT:
-            return parse_variable_declaration(parser);
+            decl = parse_variable_declaration(parser);
+            break;
         case TOKEN_KEYWORD_MOD:
-            return parse_module_declaration(parser);
+            decl = parse_module_declaration(parser);
+            break;
         case TOKEN_KEYWORD_USE:
-            return parse_use_declaration(parser);
+            decl = parse_use_declaration(parser);
+            break;
         default:
             arc_parser_error(parser, "Expected declaration, got '%.*s'",
                              (int)parser->current_token.length, parser->current_token.start);
@@ -2035,6 +2208,14 @@ static ArcAstNode *parse_declaration(ArcParser *parser) {
             }
             return NULL;
     }
+
+    // Set visibility flag on the declaration if successfully parsed
+    if (decl && is_public) {
+        // Store the visibility in the source info for now        // TODO: Add proper visibility
+        // field to all declaration AST nodes
+    }
+
+    return decl;
 }
 
 // === TOP-LEVEL PARSING ===

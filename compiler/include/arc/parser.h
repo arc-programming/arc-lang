@@ -495,18 +495,19 @@ struct ArcAstNode {
             ArcAstNode **methods;        // Dynamically managed array
             size_t method_count;
             ArcToken impl_token;  // 'impl' token
-        } impl_decl;
-
-        // AST_DECL_MODULE
+        } impl_decl;              // AST_DECL_MODULE
         struct {
             ArcToken name;       // Module name token
             ArcToken mod_token;  // 'mod' token
-        } module_decl;
-
-        // AST_DECL_USE
+            ArcAstNode *body;    // Module body (NULL for external modules)
+            bool is_external;    // true for "mod name;", false for "mod name { ... }"
+        } module_decl;           // AST_DECL_USE
         struct {
-            ArcAstNode *path;    // Use path (chain of identifiers)
-            ArcToken use_token;  // 'use' token
+            ArcAstNode *path;      // Use path (chain of identifiers)
+            ArcToken use_token;    // 'use' token
+            ArcAstNode **imports;  // Array of specific imports (NULL for simple use)
+            size_t import_count;   // Number of specific imports
+            bool is_glob_import;   // true for "use module::*"
         } use_decl;
 
         // === SPECIAL ===
